@@ -1,0 +1,9 @@
+DEBUG = True
+
+BIND_HOST = "0.0.0.0"
+BIND_PORT = 8000
+OPENAI_API_BASE_URL = "https://api.tokenfactory.nebius.com/v1/"
+OPENAI_API_KEY_ENV_VAR = "NEBIUS_API_KEY"
+MODEL = "openai/gpt-oss-20b"
+EXTERNAL_CALL_RETRIES = 1
+EXTERNAL_CALL_RETRY_DELAY_MS = 800
