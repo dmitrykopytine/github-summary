@@ -1,8 +1,6 @@
 import asyncio
 import json
 import os
-import urllib.error
-import urllib.request
 
 from fastapi import FastAPI, Request
 from fastapi.responses import Response
@@ -49,25 +47,6 @@ client = OpenAI(
 )
 
 
-def download_readme(project_path: str) -> str:
-    """
-    Download README content for a GitHub project.
-    Uses GitHub API with raw content Accept header.
-    """
-    url = f"https://api.github.com/repos/{project_path}/readme"
-    req = urllib.request.Request(
-        url,
-        headers={"Accept": "application/vnd.github.raw+json"},
-    )
-    try:
-        with urllib.request.urlopen(req) as resp:
-            return resp.read().decode("utf-8")
-    except urllib.error.HTTPError as e:
-        raise AppError(f"Failed to download README: {e.code} {e.reason}", 502)
-    except Exception as e:
-        raise AppError(f"Failed to download README: {str(e)}", 502)
-
-
 class SummarizeRequest(BaseModel):
     github_url: str = Field(..., description="URL of a public GitHub repository")
 
@@ -82,22 +61,23 @@ async def summarize(request: SummarizeRequest):
         raise AppError("github_url cannot be empty", 422)
 
     parsed = GithubUrlParser(github_url)
-    debug("Received request", {"repo": f"{parsed.owner_name}/{parsed.repo_name}"})
+    debug("Processing request", {"repo": f"{parsed.owner_name}/{parsed.repo_name}"})
 
     repo = await asyncio.to_thread(GithubRepo, parsed.owner_name, parsed.repo_name)
+
     debug("Fetched repo info", {
         "full_name": repo.full_name,
         "description": repo.description,
         "default_branch": repo.default_branch,
+        "readme": repo.readme,
     })
 
-    readme = await asyncio.to_thread(download_readme, f"{parsed.owner_name}/{parsed.repo_name}")
     user_content = f"""Respond with a JSON object.
 Key "summary": provide a short summary of this project. Start with repo name and owner, for example: "Repository 'user/repo'".
 Key "technologies": provide a list of used technologies as an array of strings, for example: ["Python", "urllib3", "certifi"].
 Key "structure": provide a brief description of the project structure.
 Important: Return ONLY the JSON object, no markdown, no code blocks, no extra text.
-{readme}"""
+{repo.readme}"""
 
     try:
         response = client.chat.completions.create(
