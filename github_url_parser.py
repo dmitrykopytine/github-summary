@@ -45,6 +45,9 @@ class GithubUrlParser:
         self._owner_name = match.group("owner")
         self._repo_name = match.group("repo")
 
+    def get_debug_context_repo(self) -> str:
+        return f"{self._owner_name}/{self._repo_name}"
+
     @property
     def owner_name(self) -> str:
         return self._owner_name

@@ -1,16 +1,26 @@
 import json
+import os
 import socket
 import time
 import urllib.error
 import urllib.request
 
-from config import EXTERNAL_CALL_RETRIES, EXTERNAL_CALL_RETRY_DELAY_MS
+from config import DOWNLOAD_RETRIES, DOWNLOAD_RETRY_DELAY_MS, GITHUB_TOKEN_ENV_VAR
+from debug import debug
 
 
-class UrlFetcher:
-    def __init__(self, url: str, is_json: bool = False, retry_number: int | None = None):
+def _get_github_token() -> str | None:
+    if not GITHUB_TOKEN_ENV_VAR:
+        return None
+    token = os.environ.get(GITHUB_TOKEN_ENV_VAR, "")
+    return token if token else None
+
+
+class GithubUrlFetcher:
+    def __init__(self, url: str, is_json: bool = False, retry_number: int | None = None, context_repo: str = ""):
         self._url = url
         self._is_json = is_json
+        self._context_repo = context_repo
 
         self._raw_response: str | None = None
         self._http_code: int | None = None
@@ -18,7 +28,7 @@ class UrlFetcher:
         self._is_error: bool = False
         self._error_message: str | None = None
 
-        retries_left = retry_number if retry_number is not None else EXTERNAL_CALL_RETRIES
+        retries_left = retry_number if retry_number is not None else DOWNLOAD_RETRIES
 
         while True:
             self._attempt()
@@ -29,7 +39,12 @@ class UrlFetcher:
             if not self._should_retry():
                 break
             retries_left -= 1
-            time.sleep(EXTERNAL_CALL_RETRY_DELAY_MS / 1000)
+            debug(self._context_repo, "URL fetch failed, retrying", {
+                "url": self._url,
+                "error": self._error_message,
+                "retries_left": retries_left,
+            })
+            time.sleep(DOWNLOAD_RETRY_DELAY_MS / 1000)
 
     @property
     def raw_response(self) -> str | None:
@@ -72,6 +87,10 @@ class UrlFetcher:
             req.add_header("Accept", "application/json")
         else:
             req.add_header("Accept", "application/vnd.github.raw+json")
+
+        token = _get_github_token()
+        if token:
+            req.add_header("Authorization", f"Bearer {token}")
 
         try:
             with urllib.request.urlopen(req, timeout=30) as resp:
