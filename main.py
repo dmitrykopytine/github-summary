@@ -25,7 +25,11 @@ class SummarizeRequest(BaseModel):
     github_url: str = Field(..., description="URL of a public GitHub repository")
 
 
-class FilesToDownloadModelResponse(BaseModel):
+class FirstPassModelResponse(BaseModel):
+    draft_summary: str
+    draft_technologies: list[str]
+    draft_structure: str
+    notes: str
     files: list[str]
 
 
@@ -42,14 +46,15 @@ async def summarize(request: SummarizeRequest):
     debug(parsed_github_url.get_debug_context_repo(), "Processing request")
     github_repo = await asyncio.to_thread(GithubRepo, parsed_github_url.owner_name, parsed_github_url.repo_name)
 
-    files_model = await asyncio.to_thread(model_get_files_to_download, github_repo)
-    file_paths = files_model.parsed.files
+    first_pass_model = await asyncio.to_thread(model_first_pass, github_repo)
+    first_pass = first_pass_model.parsed
+    file_paths = first_pass.files
     debug(github_repo.get_debug_context_repo(), "Files to download", {"count": len(file_paths), "files": file_paths})
     await asyncio.to_thread(
         github_repo.download_files, file_paths, DOWNLOAD_LIMIT_FILES, DOWNLOAD_LIMIT_KB,
     )
 
-    summary_model = await asyncio.to_thread(model_summarize, github_repo)
+    summary_model = await asyncio.to_thread(model_summarize, github_repo, first_pass)
     result = summary_model.parsed.model_dump()
 
     debug(github_repo.get_debug_context_repo(), "Responding with success")
@@ -60,123 +65,115 @@ async def summarize(request: SummarizeRequest):
     )
 
 
-def model_get_files_to_download(github_repo: GithubRepo) -> ModelCall:
-    debug(github_repo.get_debug_context_repo(), "Asking model for files to download")
-    request_content = f"""I want to summarize this repository. To improve the quality of the summary, I want to download and analyze some key files from the repository.
+def model_first_pass(github_repo: GithubRepo) -> ModelCall:
+    debug(github_repo.get_debug_context_repo(), "First pass: analyzing repo and selecting files")
+    request_content = f"""Analyze this GitHub repository. You are performing the first of two passes. Your output will be used by the same model (you) in a second pass, together with downloaded source files, to produce a final polished summary.
 
-Respond with a JSON object containing a single key "files" which is an array of file paths (strings) from the repository tree that would be most useful to download for understanding what this project does, what technologies it uses, and how it is structured.
+Your task now:
+1. Write drafts of summary, technologies, and structure based on what you can see (repo info, README, file tree).
+2. Mark uncertainties and things to verify — for example: "uses Redis (CHECK version in docker-compose.yml)", "src/main.py appears to be the entry point (CHECK what framework it uses)".
+3. Select files to download that would help resolve these uncertainties and improve the final result.
+4. Write free-form notes with cross-cutting observations, hypotheses, and instructions for the second pass.
 
+Be generous with annotations and instructions. The second pass will have access to the downloaded files and your drafts, but NOT to the repo info, README, or file tree — so capture everything important in your drafts and notes.
+
+JSON key "draft_summary":
+A draft human-readable description of what the project does.
+First sentence: what the project is and who maintains it. Start with repo name and owner, for example: "Repository 'user/repo' is ...".
+Then: 2-3 key features or capabilities.
+Then: licence name if found in repository info (e.g. "Licensed under MIT."). If not found, omit.
+Keep under 5 sentences. Add (CHECK: ...) annotations where uncertain.
+
+JSON key "draft_technologies":
+Draft list of main technologies, languages, frameworks and libraries.
+Up to 16 items. Include versions when visible (e.g. from file names or README).
+Add "(CHECK: ...)" suffix to items where the version or usage is uncertain.
+
+JSON key "draft_structure":
+Draft description of the project structure.
+List the 8-15 most important files and directories with a one-line description each. Format: "path - description".
+Add (CHECK: ...) annotations for files you want to verify in the second pass.
+
+JSON key "notes":
+Free-form notes for the second pass. Include:
+- Cross-cutting observations (e.g. "This is a monorepo", "The real project is in packages/core/").
+- Hypotheses to verify.
+- Specific things to look for in downloaded files.
+- Anything that doesn't fit neatly into the three draft fields.
+
+JSON key "files":
+Array of file paths (strings) to download for the second pass.
 Rules:
 - Select at most {DOWNLOAD_LIMIT_FILES} files.
 - Total size of selected files must not exceed {DOWNLOAD_LIMIT_KB} KB.
-- Prioritize: package manifests (package.json, composer.json, requirements.txt, Cargo.toml, etc.), configuration files, entry points, and key source files.
+- Prioritize files that resolve your uncertainties: package manifests, config files, entry points, key source files.
 - Do NOT include binary files, images, lock files, or generated files.
-- Only select files that exist in the repository tree below.
-
-<file description="Repository info in JSON format">
-{github_repo.raw_info}
-</file>
-
-<file description="Repository tree, each line contains a file path and its size in bytes">
-{github_repo.get_tree_as_text()}
-</file>
-
-<file description="README.md file">
-{github_repo.readme}
-</file>
-"""
-    token_count = ModelCall.count_tokens(request_content)
-    debug(github_repo.get_debug_context_repo(), "Token count for files-to-download request", {"tokens": token_count})
-    token_count = ModelCall.count_tokens(github_repo.raw_info)
-    debug(github_repo.get_debug_context_repo(), "Token count for github_repo.raw_info", {"tokens": token_count})
-    token_count = ModelCall.count_tokens(github_repo.get_tree_as_text())
-    debug(github_repo.get_debug_context_repo(), "Token count for github_repo.get_tree_as_text()", {"tokens": token_count})
-    token_count = ModelCall.count_tokens(github_repo.readme)
-    debug(github_repo.get_debug_context_repo(), "Token count for github_repo.readme", {"tokens": token_count})
-
-    model = ModelCall(request_content, FilesToDownloadModelResponse, github_repo.get_debug_context_repo())
+- Only select files that exist in the repository tree.
+- Use all available output tokens — be thorough in your drafts and notes."""
+    files = [
+        {"description": "Repository info in JSON format", "content": github_repo.raw_info},
+        {"description": "Repository tree, each line contains a file path and its size in bytes", "content": github_repo.get_tree_as_text()},
+        {"description": "README.md file", "content": github_repo.readme},
+    ]
+    model = ModelCall(request_content, FirstPassModelResponse, github_repo.get_debug_context_repo(), files=files)
     if model.is_error:
         raise AppError("LLM call failed", 502)
-    _debug_model_usage(github_repo, model, "files-to-download")
+    _debug_model_usage(github_repo, model, "first-pass")
 
     return model
 
 
-def model_summarize(github_repo: GithubRepo) -> ModelCall:
-    debug(github_repo.get_debug_context_repo(), "Asking model to summarize")
-    request_content = f"""Summarize this GitHub repository.
-Respond with a JSON object containing the following keys: "summary" (string), "technologies" (array of strings), "structure" (string).
+def model_summarize(github_repo: GithubRepo, first_pass: FirstPassModelResponse) -> ModelCall:
+    debug(github_repo.get_debug_context_repo(), "Second pass: refining with downloaded files")
+    request_content = """You are performing the second pass of a GitHub repository analysis. In the first pass, you analyzed the repo info, README, and file tree and produced drafts with annotations. Now you have access to downloaded source files to verify and improve those drafts.
+
+Produce the final polished response. Resolve all (CHECK: ...) annotations using the downloaded files. Remove speculation — if you cannot confirm something from the available data, omit it rather than guess.
 
 JSON key "summary":
 A human-readable description of what the project does.
 First sentence: what the project is and who maintains it. Start with repo name and owner, for example: "Repository 'user/repo' is ...".
 Then: 2-3 key features or capabilities.
-Then: licence name if found in repository info (e.g. "Licensed under MIT."). If not found, omit.
-Keep the summary under 5 sentences.
+Then: licence name if found (e.g. "Licensed under MIT."). If not found, omit.
+Keep under 5 sentences. No (CHECK: ...) annotations — this is the final output.
 
 JSON key "technologies":
 List of main technologies, languages, frameworks and libraries used.
-List up to 16 most important technologies.
-Include versions when available (e.g. from package manifests like package.json, composer.json, requirements.txt, Cargo.toml).
+Up to 16 items. Include exact versions from package manifests when available.
 License is NOT a technology and should not be included.
 
 JSON key "structure":
 Brief description of the project structure.
 List the 8-15 most important files and directories with a one-line description each. Format: "path - description". This key must be a string, NOT an array.
-Do not list every file. Focus on entry points, config files, key source directories, and test directories.
+Focus on entry points, config files, key source directories, and test directories.
 
 Do not:
-- Repeat the README content verbatim.
-- List every file in the tree.
+- Include (CHECK: ...) annotations in the final output.
 - Include generic filler like "this is a well-structured project".
-- Include markdown formatting in any of the values.
-
-
-Below is relevant information about the repository, enclosed in <file> tags.
-
-<file description="Repository info in JSON format">
-{github_repo.raw_info}
-</file>
-
-<file description="Repository tree, each line contains a file path and its size in bytes">
-{github_repo.get_tree_as_text()}
-</file>
-
-<file description="README.md file">
-{github_repo.readme}
-</file>
-
-{_format_downloaded_files(github_repo)}"""
-    model = ModelCall(request_content, SummaryModelResponse, github_repo.get_debug_context_repo())
+- Include markdown formatting in any of the values."""
+    files = [
+        {"description": "First pass: draft summary", "content": first_pass.draft_summary},
+        {"description": "First pass: draft technologies", "content": "\n".join(first_pass.draft_technologies)},
+        {"description": "First pass: draft structure", "content": first_pass.draft_structure},
+        {"description": "First pass: notes and instructions", "content": first_pass.notes},
+    ]
+    downloaded = github_repo.get_downloaded_files()
+    if downloaded:
+        for f in downloaded:
+            files.append({"description": f'Downloaded file: {f["path"]}', "content": f["content"]})
+    model = ModelCall(request_content, SummaryModelResponse, github_repo.get_debug_context_repo(), files=files)
     if model.is_error:
         raise AppError("LLM call failed", 502)
-    _debug_model_usage(github_repo, model, "summarize")
+    _debug_model_usage(github_repo, model, "second-pass")
 
     return model
 
 
 def _debug_model_usage(github_repo: GithubRepo, model: ModelCall, label: str) -> None:
     ctx = github_repo.get_debug_context_repo()
-    output_tokens_counted = None
-    if model.raw_output:
-        output_tokens_counted = ModelCall.count_tokens(model.raw_output)
     debug(ctx, f"Model usage ({label})", {
         "input_tokens": model.input_tokens,
         "output_tokens": model.output_tokens,
-        "output_tokens_counted": output_tokens_counted,
     })
-
-
-def _format_downloaded_files(github_repo: GithubRepo) -> str:
-    files = github_repo.get_downloaded_files()
-    if not files:
-        return ""
-    parts = [
-        "Below are selected source files downloaded from the repository (partial, not all files)."
-    ]
-    for f in files:
-        parts.append(f'\n<file path="{f["path"]}">\n{f["content"]}\n</file>')
-    return "\n".join(parts)
 
 
 def validate_github_url(github_url: str) -> str:

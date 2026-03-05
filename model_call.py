@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 from config import (
     ANTHROPIC_API_KEY_ENV_VAR,
+    DEBUG,
     MODEL,
     MODEL_CALL_RETRIES,
     MODEL_CALL_RETRY_DELAY_MS,
@@ -32,6 +33,7 @@ class ModelCall:
         request_content: str,
         output_schema: type[T],
         context_repo: str,
+        files: list[dict[str, str]] | None = None,
         retry_number: int | None = None,
     ):
         self._context_repo = context_repo
@@ -42,10 +44,12 @@ class ModelCall:
         self._output_tokens: int | None = None
         self._raw_output: str | None = None
 
+        full_prompt = self._build_prompt(request_content, files or [])
+
         retries_left = retry_number if retry_number is not None else MODEL_CALL_RETRIES
 
         while True:
-            self._attempt(request_content, output_schema)
+            self._attempt(full_prompt, output_schema)
             if not self._is_error:
                 break
             if retries_left <= 0:
@@ -58,6 +62,25 @@ class ModelCall:
                 "retries_left": retries_left,
             })
             time.sleep(MODEL_CALL_RETRY_DELAY_MS / 1000)
+
+    def _build_prompt(self, request_content: str, files: list[dict[str, str]]) -> str:
+        file_parts = []
+        for f in files:
+            file_parts.append(f'\n\n<file description="{f["description"]}">\n{f["content"]}\n</file>')
+        if DEBUG:
+            def _stat(part: str) -> dict:
+                chars = len(part)
+                tokens = self.count_tokens(part)
+                return {
+                    "chars": chars,
+                    "tokens": tokens,
+                    "chars/token": round(chars / tokens, 2) if tokens else 0,
+                }
+            stats = [{"part": "request_content", **_stat(request_content)}]
+            for i, f in enumerate(files):
+                stats.append({"part": f["description"], **_stat(file_parts[i])})
+            debug(self._context_repo, "Model call prompt parts", {"parts": stats})
+        return request_content + "".join(file_parts)
 
     def _should_retry(self) -> bool:
         if self._error_http_code is not None and 400 <= self._error_http_code < 500:
