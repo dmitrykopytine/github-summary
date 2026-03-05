@@ -3,9 +3,7 @@ class AppError(Exception):
         self,
         message: str,
         http_code: int = 500,
-        context: dict | None = None,
     ):
         super().__init__(message)
         self.message = message
         self.http_code = http_code
-        self.context = context

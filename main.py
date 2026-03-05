@@ -224,17 +224,10 @@ def validate_github_url(github_url: str) -> str:
 @app.exception_handler(AppError)
 async def app_error_handler(request: Request, exc: AppError):
     debug(_debug_context_repo.get(), f"Responding with failure ({exc.http_code})", {"message": exc.message})
-    message = exc.message
-    if exc.context:
-        message += "\n" + json.dumps(
-            exc.context,
-            indent=2,
-            ensure_ascii=False,
-        )
     indent = 2 if DEBUG else None
     return Response(
         content=json.dumps(
-            {"status": "error", "message": message},
+            {"status": "error", "message": exc.message},
             indent=indent,
             ensure_ascii=False,
         ),
