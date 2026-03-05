@@ -79,20 +79,15 @@ class GithubRepo:
         fetcher = GithubUrlFetcher(self._info_url, is_json=True, context_repo=self.get_debug_context_repo())
         if fetcher.is_error:
             if fetcher.http_code == 404:
-                raise AppError(
-                    "Repository not found or is private",
-                    422,
-                    {"owner_name": self._owner_name, "repo_name": self._repo_name},
-                )
+                raise AppError(f"Repository not found or is private ({self._owner_name}/{self._repo_name})", 422)
             raise AppError(
-                f"Cannot fetch repository info: {fetcher.error_message}",
+                f"Cannot fetch repository info ({self._owner_name}/{self._repo_name})",
                 502,
                 {
-                    "owner_name": self._owner_name,
-                    "repo_name": self._repo_name,
-                    "url": self._info_url,
-                    "http_code": fetcher.http_code,
+                    "error_message": fetcher.error_message,
                     "error_code": fetcher.error_code,
+                    "http_code": fetcher.http_code,
+                    "url": self._info_url,
                 },
             )
 
@@ -104,15 +99,15 @@ class GithubRepo:
         self._raw_info = json.dumps(filtered_data, indent=2, ensure_ascii=False)
         if not self._full_name:
             raise AppError(
-                "Incomplete repository info: missing full_name",
+                f"Incomplete repository info ({self._owner_name}/{self._repo_name}): Missing full_name",
                 502,
-                {"owner_name": self._owner_name, "repo_name": self._repo_name, "url": self._info_url},
+                {"url": self._info_url},
             )
         if not self._default_branch:
             raise AppError(
-                "Incomplete repository info: missing default_branch",
+                f"Incomplete repository info ({self._owner_name}/{self._repo_name}): Missing default_branch",
                 502,
-                {"owner_name": self._owner_name, "repo_name": self._repo_name, "url": self._info_url},
+                {"url": self._info_url},
             )
 
     def _fetch_readme(self):
@@ -123,14 +118,13 @@ class GithubRepo:
                 self._readme = ""
                 return
             raise AppError(
-                f"Failed to download README: {fetcher.error_message}",
+                f"Failed to download README ({self._owner_name}/{self._repo_name})",
                 502,
                 {
-                    "owner_name": self._owner_name,
-                    "repo_name": self._repo_name,
-                    "url": self._readme_url,
-                    "http_code": fetcher.http_code,
+                    "error_message": fetcher.error_message,
                     "error_code": fetcher.error_code,
+                    "http_code": fetcher.http_code,
+                    "url": self._readme_url,
                 },
             )
 
@@ -145,14 +139,13 @@ class GithubRepo:
                 self._tree: OrderedDict[str, dict] = OrderedDict()
                 return
             raise AppError(
-                f"Failed to fetch project tree: {fetcher.error_message}",
+                f"Failed to fetch project tree ({self._owner_name}/{self._repo_name})",
                 502,
                 {
-                    "owner_name": self._owner_name,
-                    "repo_name": self._repo_name,
-                    "url": self._tree_url,
-                    "http_code": fetcher.http_code,
+                    "error_message": fetcher.error_message,
                     "error_code": fetcher.error_code,
+                    "http_code": fetcher.http_code,
+                    "url": self._tree_url,
                 },
             )
 
@@ -170,8 +163,8 @@ class GithubRepo:
                 "url": item.get("url", ""),
             }
 
-    def download_files(self, file_paths: list[str], max_file_count: int, max_total_size_mb: float) -> None:
-        max_total_size_bytes = int(max_total_size_mb * 1024 * 1024)
+    def download_files(self, file_paths: list[str], max_file_count: int, max_total_size_kb: float) -> None:
+        max_total_size_bytes = int(max_total_size_kb * 1024)
         valid_paths = []
         total_size = 0
         for path in file_paths:

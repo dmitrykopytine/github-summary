@@ -10,8 +10,8 @@ from config import (
     BIND_HOST,
     BIND_PORT,
     DEBUG,
-    DOWNLOAD_LIMIT_STAGE_1_FILES,
-    DOWNLOAD_LIMIT_STAGE_1_MB,
+    DOWNLOAD_LIMIT_FILES,
+    DOWNLOAD_LIMIT_KB,
 )
 from exceptions import AppError
 from github_repo import GithubRepo
@@ -46,12 +46,13 @@ async def summarize(request: SummarizeRequest):
     file_paths = files_model.parsed.files
     debug(github_repo.get_debug_context_repo(), "Files to download", {"count": len(file_paths), "files": file_paths})
     await asyncio.to_thread(
-        github_repo.download_files, file_paths, DOWNLOAD_LIMIT_STAGE_1_FILES, DOWNLOAD_LIMIT_STAGE_1_MB,
+        github_repo.download_files, file_paths, DOWNLOAD_LIMIT_FILES, DOWNLOAD_LIMIT_KB,
     )
 
     summary_model = await asyncio.to_thread(model_summarize, github_repo)
     result = summary_model.parsed.model_dump()
 
+    debug(github_repo.get_debug_context_repo(), "Responding with success")
     indent = 2 if DEBUG else None
     return Response(
         content=json.dumps(result, indent=indent, ensure_ascii=False),
@@ -66,8 +67,8 @@ def model_get_files_to_download(github_repo: GithubRepo) -> ModelCall:
 Respond with a JSON object containing a single key "files" which is an array of file paths (strings) from the repository tree that would be most useful to download for understanding what this project does, what technologies it uses, and how it is structured.
 
 Rules:
-- Select at most {DOWNLOAD_LIMIT_STAGE_1_FILES} files.
-- Total size of selected files must not exceed {DOWNLOAD_LIMIT_STAGE_1_MB} MB.
+- Select at most {DOWNLOAD_LIMIT_FILES} files.
+- Total size of selected files must not exceed {DOWNLOAD_LIMIT_KB} KB.
 - Prioritize: package manifests (package.json, composer.json, requirements.txt, Cargo.toml, etc.), configuration files, entry points, and key source files.
 - Do NOT include binary files, images, lock files, or generated files.
 - Only select files that exist in the repository tree below.
@@ -84,9 +85,19 @@ Rules:
 {github_repo.readme}
 </file>
 """
+    token_count = ModelCall.count_tokens(request_content)
+    debug(github_repo.get_debug_context_repo(), "Token count for files-to-download request", {"tokens": token_count})
+    token_count = ModelCall.count_tokens(github_repo.raw_info)
+    debug(github_repo.get_debug_context_repo(), "Token count for github_repo.raw_info", {"tokens": token_count})
+    token_count = ModelCall.count_tokens(github_repo.get_tree_as_text())
+    debug(github_repo.get_debug_context_repo(), "Token count for github_repo.get_tree_as_text()", {"tokens": token_count})
+    token_count = ModelCall.count_tokens(github_repo.readme)
+    debug(github_repo.get_debug_context_repo(), "Token count for github_repo.readme", {"tokens": token_count})
+
     model = ModelCall(request_content, FilesToDownloadModelResponse, github_repo.get_debug_context_repo())
     if model.is_error:
-        raise AppError(f"Model request failed: {model.error_message}", 502)
+        raise AppError("LLM call failed", 502)
+    _debug_model_usage(github_repo, model, "files-to-download")
 
     return model
 
@@ -138,9 +149,22 @@ Below is relevant information about the repository, enclosed in <file> tags.
 {_format_downloaded_files(github_repo)}"""
     model = ModelCall(request_content, SummaryModelResponse, github_repo.get_debug_context_repo())
     if model.is_error:
-        raise AppError(f"Model request failed: {model.error_message}", 502)
+        raise AppError("LLM call failed", 502)
+    _debug_model_usage(github_repo, model, "summarize")
 
     return model
+
+
+def _debug_model_usage(github_repo: GithubRepo, model: ModelCall, label: str) -> None:
+    ctx = github_repo.get_debug_context_repo()
+    output_tokens_counted = None
+    if model.raw_output:
+        output_tokens_counted = ModelCall.count_tokens(model.raw_output)
+    debug(ctx, f"Model usage ({label})", {
+        "input_tokens": model.input_tokens,
+        "output_tokens": model.output_tokens,
+        "output_tokens_counted": output_tokens_counted,
+    })
 
 
 def _format_downloaded_files(github_repo: GithubRepo) -> str:
@@ -166,6 +190,7 @@ def validate_github_url(github_url: str) -> str:
 
 @app.exception_handler(AppError)
 async def app_error_handler(request: Request, exc: AppError):
+    debug("", f"Responding with failure ({exc.http_code})", {"message": exc.message})
     message = exc.message
     if exc.context:
         message += "\n" + json.dumps(exc.context, indent=2, ensure_ascii=False)
