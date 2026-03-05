@@ -15,7 +15,7 @@ _REPO_PART = r"""
     (?P<repo>
         [A-Za-z0-9._-]{1,100}?         # repo chars, max length 100
     )
-    (?=\.git(?:/|$)|/|$)               # stop before optional .git or path end
+    (?=\.git(?:[/?]|$)|[/?]|$)          # stop before optional .git, path, query, or end
 """
 
 _GITHUB_URL_RE = re.compile(
@@ -31,7 +31,7 @@ _GITHUB_URL_RE = re.compile(
     /
     {_REPO_PART}
     (?(web)(?:\.git)?)                  # only github.com URLs may have optional .git suffix
-    (?:/|$)
+    (?:[/?]|$)
     """,
     re.VERBOSE,
 )
