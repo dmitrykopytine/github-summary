@@ -112,9 +112,9 @@ Rules:
 - Only select files that exist in the repository tree.
 - Use all available output tokens — be thorough in your drafts and notes."""
     files = [
-        {"description": "Repository info in JSON format", "content": github_repo.raw_info},
-        {"description": "Repository tree, each line contains a file path and its size in bytes", "content": github_repo.get_tree_as_text()},
-        {"description": "README.md file", "content": github_repo.readme},
+        {"description": "Repository info in JSON format", "content": github_repo.raw_info, "truncatable": True},
+        {"description": "Repository tree, each line contains a file path and its size in bytes", "content": github_repo.get_tree_as_text(), "truncatable": True},
+        {"description": "README.md file", "content": github_repo.readme, "truncatable": True},
     ]
     max_input_tokens = int(MODEL_MAX_TOKENS_PER_CALL * 0.8)
     max_output_tokens = int(MODEL_MAX_TOKENS_PER_CALL * 0.2)
@@ -157,15 +157,15 @@ Do not:
 - Include generic filler like "this is a well-structured project".
 - Include markdown formatting in any of the values."""
     files = [
-        {"description": "First pass: draft summary", "content": first_pass.draft_summary},
-        {"description": "First pass: draft technologies", "content": "\n".join(first_pass.draft_technologies)},
-        {"description": "First pass: draft structure", "content": first_pass.draft_structure},
-        {"description": "First pass: notes and instructions", "content": first_pass.notes},
+        {"description": "First pass: draft summary", "content": first_pass.draft_summary, "truncatable": False},
+        {"description": "First pass: draft technologies", "content": "\n".join(first_pass.draft_technologies), "truncatable": False},
+        {"description": "First pass: draft structure", "content": first_pass.draft_structure, "truncatable": False},
+        {"description": "First pass: notes and instructions", "content": first_pass.notes, "truncatable": False},
     ]
     downloaded = github_repo.get_downloaded_files()
     if downloaded:
         for f in downloaded:
-            files.append({"description": f'Downloaded file: {f["path"]}', "content": f["content"]})
+            files.append({"description": f'Downloaded file: {f["path"]}', "content": f["content"], "truncatable": True})
     max_input_tokens = int(MODEL_MAX_TOKENS_PER_CALL * 0.8)
     max_output_tokens = int(MODEL_MAX_TOKENS_PER_CALL * 0.2)
     model = ModelCall(
