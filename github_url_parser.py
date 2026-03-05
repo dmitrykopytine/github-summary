@@ -41,7 +41,7 @@ class GithubUrlParser:
     def __init__(self, url: str):
         match = _GITHUB_URL_RE.match(url.strip())
         if not match:
-            raise AppError("Could not parse github_url", 422, {"url": url})
+            raise AppError("Could not parse github_url", 422)
         self._owner_name = match.group("owner")
         self._repo_name = match.group("repo")
 

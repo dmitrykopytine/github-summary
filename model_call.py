@@ -10,7 +10,7 @@ from config import (
     MODEL,
     MODEL_CALL_RETRIES,
     MODEL_CALL_RETRY_DELAY_MS,
-    MODEL_MAX_TOKENS,
+    MODEL_MAX_TOKENS_PER_CALL,
 )
 from debug import debug
 
@@ -38,6 +38,9 @@ class ModelCall:
         self._is_error: bool = False
         self._error_message: str | None = None
         self._parsed: T | None = None
+        self._input_tokens: int | None = None
+        self._output_tokens: int | None = None
+        self._raw_output: str | None = None
 
         retries_left = retry_number if retry_number is not None else MODEL_CALL_RETRIES
 
@@ -66,11 +69,14 @@ class ModelCall:
         self._error_message = None
         self._error_http_code = None
         self._parsed = None
+        self._input_tokens = None
+        self._output_tokens = None
+        self._raw_output = None
 
         try:
             response = _client.beta.messages.parse(
                 model=MODEL,
-                max_tokens=MODEL_MAX_TOKENS,
+                max_tokens=MODEL_MAX_TOKENS_PER_CALL,
                 betas=["structured-outputs-2025-11-13"],
                 system=self.SYSTEM_PROMPT,
                 messages=[
@@ -82,6 +88,10 @@ class ModelCall:
                 output_format=output_schema,
             )
             self._parsed = response.parsed_output
+            self._input_tokens = response.usage.input_tokens
+            self._output_tokens = response.usage.output_tokens
+            if response.content:
+                self._raw_output = response.content[0].text
         except anthropic.APIStatusError as e:
             self._is_error = True
             self._error_message = f"Model call failed: {e.message}"
@@ -95,6 +105,24 @@ class ModelCall:
             self._is_error = True
             self._error_message = "Model returned empty or unparseable response"
 
+        if self._is_error:
+            debug(self._context_repo, "Model call failed", {
+                "error_message": self._error_message,
+                "error_http_code": self._error_http_code,
+                "input_tokens": self._input_tokens,
+                "output_tokens": self._output_tokens,
+                "raw_output_first_100_chars": self._raw_output[:100] if self._raw_output else None,
+            })
+
+    @staticmethod
+    def count_tokens(request_content: str) -> int:
+        result = _client.messages.count_tokens(
+            model=MODEL,
+            system=ModelCall.SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": request_content}],
+        )
+        return result.input_tokens
+
     @property
     def is_error(self) -> bool:
         return self._is_error
@@ -106,3 +134,15 @@ class ModelCall:
     @property
     def parsed(self) -> T | None:
         return self._parsed
+
+    @property
+    def input_tokens(self) -> int | None:
+        return self._input_tokens
+
+    @property
+    def output_tokens(self) -> int | None:
+        return self._output_tokens
+
+    @property
+    def raw_output(self) -> str | None:
+        return self._raw_output
