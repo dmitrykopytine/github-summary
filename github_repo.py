@@ -76,7 +76,11 @@ class GithubRepo:
 
     def _fetch_info(self):
         debug(self.get_debug_context_repo(), "Fetching repo info", {"url": self._info_url})
-        fetcher = GithubUrlFetcher(self._info_url, is_json=True, context_repo=self.get_debug_context_repo())
+        fetcher = GithubUrlFetcher(
+            self._info_url,
+            is_json=True,
+            context_repo=self.get_debug_context_repo(),
+        )
         if fetcher.is_error:
             if fetcher.http_code == 404:
                 raise AppError(f"Repository not found or is private ({self._owner_name}/{self._repo_name})", 422)
@@ -96,7 +100,11 @@ class GithubRepo:
         self._description = data.get("description", "") or ""
         self._default_branch = data.get("default_branch", "")
         filtered_data = _strip_keys(data)
-        self._raw_info = json.dumps(filtered_data, indent=2, ensure_ascii=False)
+        self._raw_info = json.dumps(
+            filtered_data,
+            indent=2,
+            ensure_ascii=False,
+        )
         if not self._full_name:
             raise AppError(
                 f"Incomplete repository info ({self._owner_name}/{self._repo_name}): Missing full_name",
@@ -132,7 +140,11 @@ class GithubRepo:
 
     def _fetch_tree(self):
         debug(self.get_debug_context_repo(), "Fetching repo tree", {"url": self._tree_url})
-        fetcher = GithubUrlFetcher(self._tree_url, is_json=True, context_repo=self.get_debug_context_repo())
+        fetcher = GithubUrlFetcher(
+            self._tree_url,
+            is_json=True,
+            context_repo=self.get_debug_context_repo(),
+        )
         if fetcher.is_error:
             if fetcher.http_code == 409:
                 debug(self.get_debug_context_repo(), "Repository is empty, no tree available")
@@ -176,7 +188,10 @@ class GithubRepo:
                 debug(self.get_debug_context_repo(), "Reached max file count, skipping", {"path": path})
                 break
             if total_size + file_size > max_total_size_bytes:
-                debug(self.get_debug_context_repo(), "Would exceed max size, skipping", {"path": path, "size": file_size})
+                debug(self.get_debug_context_repo(), "Would exceed max size, skipping", {
+                    "path": path,
+                    "size": file_size,
+                })
                 continue
             valid_paths.append(path)
             total_size += file_size
@@ -188,7 +203,10 @@ class GithubRepo:
             url = self._tree[path]["url"]
             fetcher = GithubUrlFetcher(url, context_repo=self.get_debug_context_repo())
             if fetcher.is_error:
-                debug(self.get_debug_context_repo(), "Failed to download file, skipping", {"path": path, "error": fetcher.error_message})
+                debug(self.get_debug_context_repo(), "Failed to download file, skipping", {
+                    "path": path,
+                    "error": fetcher.error_message,
+                })
                 return
             with lock:
                 self._downloaded_files[path] = fetcher.raw_response
