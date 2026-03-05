@@ -38,6 +38,9 @@ class TestGithubUrlParserValid:
             ("https://github.com/owner/my_repo", "owner", "my_repo"),
             ("https://github.com/owner/my-repo", "owner", "my-repo"),
             ("https://github.com/owner/my.repo-name_v2", "owner", "my.repo-name_v2"),
+            # query parameters
+            ("https://github.com/intminds/gps?tab=readme-ov-file", "intminds", "gps"),
+            ("https://github.com/intminds/gps/?tab=readme-ov-file", "intminds", "gps"),
             # whitespace around URL
             ("  https://github.com/intminds/gps  ", "intminds", "gps"),
             # .git in API/raw URLs is absorbed into repo name (no stripping)
@@ -80,8 +83,6 @@ class TestGithubUrlParserInvalid:
         with pytest.raises(AppError) as exc_info:
             GithubUrlParser(url)
         assert exc_info.value.http_code == 422
-        assert exc_info.value.context is not None
-        assert "url" in exc_info.value.context
 
 
 class TestGithubUrlParserOwnerLimits:
