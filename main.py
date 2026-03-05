@@ -1,4 +1,5 @@
 import asyncio
+import contextvars
 import json
 
 from fastapi import FastAPI, Request
@@ -21,9 +22,14 @@ from model_call import ModelCall
 
 app = FastAPI()
 
+_debug_context_repo: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "debug_context_repo",
+    default="",
+)
+
 
 class SummarizeRequest(BaseModel):
-    github_url: str = Field(..., description="URL of a public GitHub repository")
+    github_url: str = Field(..., description="URL of a GitHub repository")
 
 
 class FirstPassModelResponse(BaseModel):
@@ -34,7 +40,7 @@ class FirstPassModelResponse(BaseModel):
     files: list[str]
 
 
-class SummaryModelResponse(BaseModel):
+class SecondFinalPassModelResponse(BaseModel):
     summary: str
     technologies: list[str]
     structure: str
@@ -44,30 +50,49 @@ class SummaryModelResponse(BaseModel):
 async def summarize(request: SummarizeRequest):
     github_url = validate_github_url(request.github_url)
     parsed_github_url = GithubUrlParser(github_url)
+    _debug_context_repo.set(parsed_github_url.get_debug_context_repo())
     debug(parsed_github_url.get_debug_context_repo(), "Processing request")
-    github_repo = await asyncio.to_thread(GithubRepo, parsed_github_url.owner_name, parsed_github_url.repo_name)
+    github_repo = await asyncio.to_thread(
+        GithubRepo,
+        parsed_github_url.owner_name,
+        parsed_github_url.repo_name,
+    )
 
     first_pass_model = await asyncio.to_thread(model_first_pass, github_repo)
     first_pass = first_pass_model.parsed
     file_paths = first_pass.files
-    debug(github_repo.get_debug_context_repo(), "Files to download", {"count": len(file_paths), "files": file_paths})
+    debug(github_repo.get_debug_context_repo(), "Files to download", {
+        "count": len(file_paths),
+        "files": file_paths,
+    })
     await asyncio.to_thread(
-        github_repo.download_files, file_paths, DOWNLOAD_LIMIT_FILES, DOWNLOAD_LIMIT_KB,
+        github_repo.download_files,
+        file_paths,
+        DOWNLOAD_LIMIT_FILES,
+        DOWNLOAD_LIMIT_KB,
     )
 
-    summary_model = await asyncio.to_thread(model_summarize, github_repo, first_pass)
+    summary_model = await asyncio.to_thread(
+        model_summarize,
+        github_repo,
+        first_pass,
+    )
     result = summary_model.parsed.model_dump()
 
     debug(github_repo.get_debug_context_repo(), "Responding with success")
     indent = 2 if DEBUG else None
     return Response(
-        content=json.dumps(result, indent=indent, ensure_ascii=False),
+        content=json.dumps(
+            result,
+            indent=indent,
+            ensure_ascii=False,
+        ),
         media_type="application/json",
     )
 
 
 def model_first_pass(github_repo: GithubRepo) -> ModelCall:
-    debug(github_repo.get_debug_context_repo(), "First pass: analyzing repo and selecting files")
+    debug(github_repo.get_debug_context_repo(), "First pass: Analyzing repo and selecting files to download")
     request_content = f"""Analyze this GitHub repository. You are performing the first of two passes. Your output will be used by the same model (you) in a second pass, together with downloaded source files, to produce a final polished summary.
 
 Your task now:
@@ -119,18 +144,22 @@ Rules:
     max_input_tokens = int(MODEL_MAX_TOKENS_PER_CALL * 0.8)
     max_output_tokens = int(MODEL_MAX_TOKENS_PER_CALL * 0.2)
     model = ModelCall(
-        request_content, FirstPassModelResponse, github_repo.get_debug_context_repo(),
-        max_input_tokens=max_input_tokens, max_output_tokens=max_output_tokens, files=files,
+        request_content,
+        FirstPassModelResponse,
+        max_input_tokens,
+        max_output_tokens,
+        files=files,
+        debug_context_repo=github_repo.get_debug_context_repo(),
+        debug_context_call_title="First pass",
     )
     if model.is_error:
         raise AppError("LLM call failed", 502)
-    _debug_model_usage(github_repo, model, "first-pass")
 
     return model
 
 
 def model_summarize(github_repo: GithubRepo, first_pass: FirstPassModelResponse) -> ModelCall:
-    debug(github_repo.get_debug_context_repo(), "Second pass: refining with downloaded files")
+    debug(github_repo.get_debug_context_repo(), "Second final pass: Refining with downloaded files")
     request_content = """You are performing the second pass of a GitHub repository analysis. In the first pass, you analyzed the repo info, README, and file tree and produced drafts with annotations. Now you have access to downloaded source files to verify and improve those drafts.
 
 Produce the final polished response. Resolve all (CHECK: ...) annotations using the downloaded files. Remove speculation — if you cannot confirm something from the available data, omit it rather than guess.
@@ -169,22 +198,18 @@ Do not:
     max_input_tokens = int(MODEL_MAX_TOKENS_PER_CALL * 0.8)
     max_output_tokens = int(MODEL_MAX_TOKENS_PER_CALL * 0.2)
     model = ModelCall(
-        request_content, SummaryModelResponse, github_repo.get_debug_context_repo(),
-        max_input_tokens=max_input_tokens, max_output_tokens=max_output_tokens, files=files,
+        request_content,
+        SecondFinalPassModelResponse,
+        max_input_tokens,
+        max_output_tokens,
+        files=files,
+        debug_context_repo=github_repo.get_debug_context_repo(),
+        debug_context_call_title="Second final pass",
     )
     if model.is_error:
         raise AppError("LLM call failed", 502)
-    _debug_model_usage(github_repo, model, "second-pass")
 
     return model
-
-
-def _debug_model_usage(github_repo: GithubRepo, model: ModelCall, label: str) -> None:
-    ctx = github_repo.get_debug_context_repo()
-    debug(ctx, f"Model usage ({label})", {
-        "input_tokens": model.input_tokens,
-        "output_tokens": model.output_tokens,
-    })
 
 
 def validate_github_url(github_url: str) -> str:
@@ -198,10 +223,14 @@ def validate_github_url(github_url: str) -> str:
 
 @app.exception_handler(AppError)
 async def app_error_handler(request: Request, exc: AppError):
-    debug("", f"Responding with failure ({exc.http_code})", {"message": exc.message})
+    debug(_debug_context_repo.get(), f"Responding with failure ({exc.http_code})", {"message": exc.message})
     message = exc.message
     if exc.context:
-        message += "\n" + json.dumps(exc.context, indent=2, ensure_ascii=False)
+        message += "\n" + json.dumps(
+            exc.context,
+            indent=2,
+            ensure_ascii=False,
+        )
     indent = 2 if DEBUG else None
     return Response(
         content=json.dumps(
@@ -217,4 +246,8 @@ async def app_error_handler(request: Request, exc: AppError):
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host=BIND_HOST, port=BIND_PORT)
+    uvicorn.run(
+        app,
+        host=BIND_HOST,
+        port=BIND_PORT,
+    )

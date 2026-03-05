@@ -35,13 +35,15 @@ class ModelCall:
         self,
         request_content: str,
         output_schema: type[T],
-        context_repo: str,
         max_input_tokens: int,
         max_output_tokens: int,
         files: list[dict[str, str]] | None = None,
         retry_number: int | None = None,
+        debug_context_repo: str = "",
+        debug_context_call_title: str = "",
     ):
-        self._context_repo = context_repo
+        self._debug_context_repo = debug_context_repo
+        self._debug_context_call_title = debug_context_call_title
         self._max_input_tokens = max_input_tokens
         self._max_output_tokens = max_output_tokens
         self._is_error: bool = False
@@ -64,11 +66,23 @@ class ModelCall:
             if not self._should_retry():
                 break
             retries_left -= 1
-            debug(self._context_repo, "Model request failed, retrying", {
+            self._debug("Model request failed, retrying", {
                 "error": self._error_message,
                 "retries_left": retries_left,
             })
             time.sleep(MODEL_CALL_RETRY_DELAY_MS / 1000)
+
+        self._debug_usage()
+
+    def _debug(self, message: str, context: dict | None = None) -> None:
+        prefix = f"{self._debug_context_call_title}: " if self._debug_context_call_title else ""
+        debug(self._debug_context_repo, f"{prefix}{message}", context)
+
+    def _debug_usage(self) -> None:
+        self._debug("Model usage", {
+            "input_tokens": self._input_tokens,
+            "output_tokens": self._output_tokens,
+        })
 
     def _build_prompt(self, request_content: str, files: list[dict]) -> str:
         contents = [f["content"] for f in files]
@@ -88,7 +102,6 @@ class ModelCall:
             stats = [{"part": "request_content", **_stat(request_content)}]
             for i, f in enumerate(files):
                 stats.append({"part": f["description"], **_stat(file_parts[i])})
-            debug(self._context_repo, "Model call prompt parts", {"parts": stats})
         return prompt
 
     def _truncate_files_if_needed(
@@ -97,8 +110,9 @@ class ModelCall:
         full_prompt = self._assemble_prompt(request_content, files, contents)
         token_count = self.count_tokens(full_prompt)
         if token_count <= self._max_input_tokens:
-            debug(self._context_repo, "Input fits within token limit", {
-                "tokens": token_count, "max": self._max_input_tokens,
+            self._debug("Input fits within token limit", {
+                "input_tokens": token_count,
+                "max": self._max_input_tokens,
             })
             return contents
 
@@ -107,9 +121,11 @@ class ModelCall:
         target_tokens = int(self._max_input_tokens * _TRUNCATION_TARGET_RATIO)
         target_chars = int(target_tokens * chars_per_token)
         chars_to_remove = total_chars - target_chars
-        debug(self._context_repo, "Input exceeds token limit, truncating files", {
-            "tokens": token_count, "max": self._max_input_tokens,
-            "total_chars": total_chars, "target_chars": target_chars,
+        self._debug("Input exceeds token limit, truncating files", {
+            "input_tokens": token_count,
+            "max": self._max_input_tokens,
+            "total_chars": total_chars,
+            "target_chars": target_chars,
             "chars_to_remove": chars_to_remove,
         })
         return self._level_truncate(files, contents, chars_to_remove)
@@ -122,9 +138,11 @@ class ModelCall:
         total_chars = len(prompt)
         ratio = (self._max_input_tokens * _TRUNCATION_TARGET_RATIO) / token_count
         target_chars = int(total_chars * ratio)
-        debug(self._context_repo, "Still over limit, truncating whole prompt", {
-            "tokens": token_count, "max": self._max_input_tokens,
-            "ratio": round(ratio, 3), "target_chars": target_chars,
+        self._debug("Still over limit, truncating whole prompt", {
+            "input_tokens": token_count,
+            "max": self._max_input_tokens,
+            "ratio": round(ratio, 3),
+            "target_chars": target_chars,
         })
         return self._truncate_at(prompt, target_chars)
 
@@ -133,7 +151,7 @@ class ModelCall:
     ) -> list[str]:
         truncatable = [(i, len(contents[i])) for i, f in enumerate(files) if f.get("truncatable")]
         if not truncatable:
-            debug(self._context_repo, "No truncatable files, cannot reduce input size")
+            self._debug("No truncatable files, cannot reduce input size")
             return contents
 
         truncatable.sort(key=lambda x: x[1], reverse=True)
@@ -226,7 +244,7 @@ class ModelCall:
             self._error_message = "Model returned empty or unparseable response"
 
         if self._is_error:
-            debug(self._context_repo, "Model call failed", {
+            self._debug("Model call failed", {
                 "error_message": self._error_message,
                 "error_http_code": self._error_http_code,
                 "input_tokens": self._input_tokens,
