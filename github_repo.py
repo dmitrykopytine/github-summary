@@ -84,16 +84,7 @@ class GithubRepo:
         if fetcher.is_error:
             if fetcher.http_code == 404:
                 raise AppError(f"Repository not found or is private ({self._owner_name}/{self._repo_name})", 422)
-            raise AppError(
-                f"Cannot fetch repository info ({self._owner_name}/{self._repo_name})",
-                502,
-                {
-                    "error_message": fetcher.error_message,
-                    "error_code": fetcher.error_code,
-                    "http_code": fetcher.http_code,
-                    "url": self._info_url,
-                },
-            )
+            raise AppError(f"Cannot fetch repository info ({self._owner_name}/{self._repo_name})", 502)
 
         data = json.loads(fetcher.raw_response)
         self._full_name = data.get("full_name", "")
@@ -106,35 +97,25 @@ class GithubRepo:
             ensure_ascii=False,
         )
         if not self._full_name:
-            raise AppError(
-                f"Incomplete repository info ({self._owner_name}/{self._repo_name}): Missing full_name",
-                502,
-                {"url": self._info_url},
-            )
+            raise AppError(f"Incomplete repository info ({self._owner_name}/{self._repo_name}): Missing full_name. Attempted URL: {self._info_url}", 502)
         if not self._default_branch:
-            raise AppError(
-                f"Incomplete repository info ({self._owner_name}/{self._repo_name}): Missing default_branch",
-                502,
-                {"url": self._info_url},
-            )
+            raise AppError(f"Incomplete repository info ({self._owner_name}/{self._repo_name}): Missing default_branch. Attempted URL: {self._info_url}", 502)
 
     def _fetch_readme(self):
         debug(self.get_debug_context_repo(), "Fetching repo readme", {"url": self._readme_url})
         fetcher = GithubUrlFetcher(self._readme_url, context_repo=self.get_debug_context_repo())
         if fetcher.is_error:
             if fetcher.http_code == 404:
+                debug(self.get_debug_context_repo(), "Readme is not available")
                 self._readme = ""
                 return
-            raise AppError(
-                f"Failed to download README ({self._owner_name}/{self._repo_name})",
-                502,
-                {
-                    "error_message": fetcher.error_message,
-                    "error_code": fetcher.error_code,
-                    "http_code": fetcher.http_code,
-                    "url": self._readme_url,
-                },
-            )
+            debug(self.get_debug_context_repo(), "Failed to download README", {
+                "error_message": fetcher.error_message,
+                "error_code": fetcher.error_code,
+                "http_code": fetcher.http_code,
+                "url": self._readme_url,
+            })
+            raise AppError(f"Failed to download README ({self._owner_name}/{self._repo_name}). Attempted URL: {self._readme_url}", 502)
 
         self._readme = fetcher.raw_response
 
@@ -150,16 +131,13 @@ class GithubRepo:
                 debug(self.get_debug_context_repo(), "Repository is empty, no tree available")
                 self._tree: OrderedDict[str, dict] = OrderedDict()
                 return
-            raise AppError(
-                f"Failed to fetch project tree ({self._owner_name}/{self._repo_name})",
-                502,
-                {
-                    "error_message": fetcher.error_message,
-                    "error_code": fetcher.error_code,
-                    "http_code": fetcher.http_code,
-                    "url": self._tree_url,
-                },
-            )
+            debug(self.get_debug_context_repo(), "Failed to fetch project tree", {
+                "error_message": fetcher.error_message,
+                "error_code": fetcher.error_code,
+                "http_code": fetcher.http_code,
+                "url": self._tree_url,
+            })
+            raise AppError(f"Failed to fetch project tree ({self._owner_name}/{self._repo_name}). Attempted URL: {self._tree_url}", 502)
 
         data = json.loads(fetcher.raw_response)
         tree_items = data.get("tree", [])
