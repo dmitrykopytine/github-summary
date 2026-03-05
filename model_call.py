@@ -11,7 +11,6 @@ from config import (
     MODEL,
     MODEL_CALL_RETRIES,
     MODEL_CALL_RETRY_DELAY_MS,
-    MODEL_MAX_TOKENS_PER_CALL,
 )
 from debug import debug
 
@@ -33,10 +32,14 @@ class ModelCall:
         request_content: str,
         output_schema: type[T],
         context_repo: str,
+        max_input_tokens: int,
+        max_output_tokens: int,
         files: list[dict[str, str]] | None = None,
         retry_number: int | None = None,
     ):
         self._context_repo = context_repo
+        self._max_input_tokens = max_input_tokens
+        self._max_output_tokens = max_output_tokens
         self._is_error: bool = False
         self._error_message: str | None = None
         self._parsed: T | None = None
@@ -99,7 +102,7 @@ class ModelCall:
         try:
             response = _client.beta.messages.parse(
                 model=MODEL,
-                max_tokens=MODEL_MAX_TOKENS_PER_CALL,
+                max_tokens=self._max_output_tokens,
                 betas=["structured-outputs-2025-11-13"],
                 system=self.SYSTEM_PROMPT,
                 messages=[

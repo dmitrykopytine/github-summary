@@ -12,6 +12,7 @@ from config import (
     DEBUG,
     DOWNLOAD_LIMIT_FILES,
     DOWNLOAD_LIMIT_KB,
+    MODEL_MAX_TOKENS_PER_CALL,
 )
 from exceptions import AppError
 from github_repo import GithubRepo
@@ -115,7 +116,12 @@ Rules:
         {"description": "Repository tree, each line contains a file path and its size in bytes", "content": github_repo.get_tree_as_text()},
         {"description": "README.md file", "content": github_repo.readme},
     ]
-    model = ModelCall(request_content, FirstPassModelResponse, github_repo.get_debug_context_repo(), files=files)
+    max_input_tokens = int(MODEL_MAX_TOKENS_PER_CALL * 0.8)
+    max_output_tokens = int(MODEL_MAX_TOKENS_PER_CALL * 0.2)
+    model = ModelCall(
+        request_content, FirstPassModelResponse, github_repo.get_debug_context_repo(),
+        max_input_tokens=max_input_tokens, max_output_tokens=max_output_tokens, files=files,
+    )
     if model.is_error:
         raise AppError("LLM call failed", 502)
     _debug_model_usage(github_repo, model, "first-pass")
@@ -160,7 +166,12 @@ Do not:
     if downloaded:
         for f in downloaded:
             files.append({"description": f'Downloaded file: {f["path"]}', "content": f["content"]})
-    model = ModelCall(request_content, SummaryModelResponse, github_repo.get_debug_context_repo(), files=files)
+    max_input_tokens = int(MODEL_MAX_TOKENS_PER_CALL * 0.8)
+    max_output_tokens = int(MODEL_MAX_TOKENS_PER_CALL * 0.2)
+    model = ModelCall(
+        request_content, SummaryModelResponse, github_repo.get_debug_context_repo(),
+        max_input_tokens=max_input_tokens, max_output_tokens=max_output_tokens, files=files,
+    )
     if model.is_error:
         raise AppError("LLM call failed", 502)
     _debug_model_usage(github_repo, model, "second-pass")
