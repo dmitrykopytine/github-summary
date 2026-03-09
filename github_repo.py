@@ -39,9 +39,7 @@ def _strip_keys(obj):
             k: _strip_keys(v) for k, v in obj.items()
             if k not in _STRIP_EXACT_KEYS
             and not k.endswith("_url")
-            and not isinstance(v, bool)
             and v != ""
-            and v != 0
             and v is not None
             and v != []
             and v != {}
