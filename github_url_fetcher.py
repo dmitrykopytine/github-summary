@@ -206,7 +206,7 @@ class GithubUrlFetcher:
     def _read_http_error(self, e: urllib.error.HTTPError):
         body = ""
         try:
-            body = e.read().decode("utf-8")
+            body = e.read().decode("utf-8", errors="ignore")
             self._raw_response = body
         except Exception:
             pass
