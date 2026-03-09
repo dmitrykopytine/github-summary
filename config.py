@@ -8,7 +8,11 @@ BIND_PORT = 8000
 # Anthropic LLM settings (API key is read from this env var)
 ANTHROPIC_API_KEY_ENV_VAR = "ANTHROPIC_API_KEY"
 MODEL = "claude-sonnet-4-6"
+# Maximum total tokens per call, input (80%) + output (20%).
 MODEL_MAX_TOKENS_PER_CALL = 15000
+# Cap on output tokens per call. If too many output tokens are requested,
+# the Anthropic API may require streaming, which is not supported here.
+MODEL_MAX_OUTPUT_TOKENS_PER_CALL = 8192
 MODEL_CALL_RETRIES = 2
 MODEL_CALL_RETRY_DELAY_MS = 800
 

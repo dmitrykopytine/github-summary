@@ -9,6 +9,7 @@ from config import (
     MODEL,
     MODEL_CALL_RETRIES,
     MODEL_CALL_RETRY_DELAY_MS,
+    MODEL_MAX_OUTPUT_TOKENS_PER_CALL,
 )
 from debug import debug
 from model_client import ModelClient
@@ -43,7 +44,7 @@ class ModelCall:
         self._debug_context_repo = debug_context_repo
         self._debug_context_call_title = debug_context_call_title
         self._max_input_tokens = max_input_tokens
-        self._max_output_tokens = max_output_tokens
+        self._max_output_tokens = min(max_output_tokens, MODEL_MAX_OUTPUT_TOKENS_PER_CALL)
         self._is_error: bool = False
         self._error_message: str | None = None
         self._parsed: T | None = None
@@ -114,12 +115,14 @@ class ModelCall:
         target_tokens = int(self._max_input_tokens * _TRUNCATION_TARGET_RATIO)
         target_chars = int(target_tokens * chars_per_token)
         chars_to_remove = total_chars - target_chars
+        truncated_pct = round(chars_to_remove / total_chars * 100, 1) if total_chars else 0
         self._debug("Input exceeds token limit, truncating files", {
             "input_tokens": token_count,
             "max": self._max_input_tokens,
             "total_chars": total_chars,
             "target_chars": target_chars,
             "chars_to_remove": chars_to_remove,
+            "truncated_%": truncated_pct,
         })
         return self._level_truncate(files, contents, chars_to_remove)
 
@@ -133,11 +136,13 @@ class ModelCall:
         total_chars = len(prompt)
         ratio = (self._max_input_tokens * _TRUNCATION_TARGET_RATIO) / token_count
         target_chars = int(total_chars * ratio)
+        truncated_pct = round((1 - ratio) * 100, 1)
         self._debug("Still over limit, truncating whole prompt", {
             "input_tokens": token_count,
             "max": self._max_input_tokens,
             "ratio": round(ratio, 3),
             "target_chars": target_chars,
+            "truncated_%": truncated_pct,
         })
         return self._truncate_at(prompt, target_chars)
 
