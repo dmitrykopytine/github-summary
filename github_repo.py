@@ -23,21 +23,18 @@ _NOISE_DIRS = (
 
 
 def _is_noise_path(path: str) -> bool:
-    for prefix in _NOISE_DIRS:
-        if path.startswith(prefix):
-            return True
-    return False
+    return any(path.startswith(prefix) for prefix in _NOISE_DIRS)
 
 
-_STRIP_EXACT_KEYS = {"url", "node_id", "security_and_analysis"}
+_STRIP_INFO_EXACT_KEYS = {"url", "node_id", "security_and_analysis"}
 
 
-def _strip_keys(obj):
-    """Recursively remove noisy keys — makes JSON much more lightweight."""
+def _strip_info_keys(obj):
+    """Recursively remove noisy keys, empty/null values — makes JSON much more lightweight."""
     if isinstance(obj, dict):
         return {
-            k: _strip_keys(v) for k, v in obj.items()
-            if k not in _STRIP_EXACT_KEYS
+            k: _strip_info_keys(v) for k, v in obj.items()
+            if k not in _STRIP_INFO_EXACT_KEYS
             and not k.endswith("_url")
             and v != ""
             and v is not None
@@ -45,7 +42,7 @@ def _strip_keys(obj):
             and v != {}
         }
     if isinstance(obj, list):
-        return [_strip_keys(item) for item in obj]
+        return [_strip_info_keys(item) for item in obj]
     return obj
 
 
@@ -54,6 +51,7 @@ class GithubRepo:
         self._owner_name = owner_name
         self._repo_name = repo_name
         self._tree_as_text: str | None = None
+        self._downloaded_files: OrderedDict[str, str] = OrderedDict()
         self._info_url = f"https://api.github.com/repos/{owner_name}/{repo_name}"
         self._readme_url = f"https://api.github.com/repos/{owner_name}/{repo_name}/readme"
 
@@ -89,7 +87,7 @@ class GithubRepo:
         self._full_name = data.get("full_name", "")
         self._description = data.get("description", "") or ""
         self._default_branch = data.get("default_branch", "")
-        filtered_data = _strip_keys(data)
+        filtered_data = _strip_info_keys(data)
         self._raw_info = json.dumps(
             filtered_data,
             indent=2,
@@ -201,8 +199,6 @@ class GithubRepo:
         })
 
     def get_downloaded_files(self) -> list[dict[str, str]]:
-        if not hasattr(self, "_downloaded_files"):
-            return []
         return [{"path": path, "content": content} for path, content in self._downloaded_files.items()]
 
     def get_tree_as_text(self) -> str:

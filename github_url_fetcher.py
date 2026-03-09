@@ -10,14 +10,17 @@ from debug import debug
 
 
 def _get_github_token() -> str | None:
-    if not GITHUB_TOKEN_ENV_VAR:
-        return None
-    token = os.environ.get(GITHUB_TOKEN_ENV_VAR, "")
-    return token if token else None
+    return os.environ.get(GITHUB_TOKEN_ENV_VAR) or None
 
 
 class GithubUrlFetcher:
-    def __init__(self, url: str, is_json: bool = False, retry_number: int | None = None, context_repo: str = ""):
+    def __init__(
+        self,
+        url: str,
+        is_json: bool = False,
+        retry_number: int | None = None,
+        context_repo: str = "",
+    ):
         self._url = url
         self._is_json = is_json
         self._context_repo = context_repo
