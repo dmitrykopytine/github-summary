@@ -134,6 +134,12 @@ class GithubUrlFetcher:
         try:
             with urllib.request.urlopen(req, timeout=30) as resp:
                 self._http_code = resp.status
+                if not self._is_json and not self._is_text_content_type(resp):
+                    self._is_error = True
+                    self._error_code = "binary"
+                    self._error_message = "Binary file skipped"
+                    self._debug_detail = resp.headers.get("Content-Type", "")
+                    return
                 if self._download_max_size_bytes is not None:
                     self._raw_response, self._is_truncated_response = self._read_limited(resp)
                 else:
@@ -202,6 +208,18 @@ class GithubUrlFetcher:
                 break
             chunks.append(chunk)
         return b"".join(chunks).decode("utf-8", errors="ignore"), truncated
+
+    @staticmethod
+    def _is_text_content_type(resp) -> bool:
+        content_type = resp.headers.get("Content-Type", "")
+        return (
+            content_type.startswith("text/")
+            or "json" in content_type
+            or "xml" in content_type
+            or "javascript" in content_type
+            or "yaml" in content_type
+            or "charset=" in content_type
+        )
 
     def _read_http_error(self, e: urllib.error.HTTPError):
         body = ""
