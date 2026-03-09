@@ -168,7 +168,7 @@ class GithubRepo:
             valid_paths.append(path)
             total_size += file_size
 
-        self._downloaded_files: OrderedDict[str, str] = OrderedDict()
+        results: dict[str, str] = {}
         lock = threading.Lock()
 
         def _download_one(path: str):
@@ -181,10 +181,15 @@ class GithubRepo:
             if fetcher.is_error:
                 return
             with lock:
-                self._downloaded_files[path] = fetcher.raw_response
+                results[path] = fetcher.raw_response
 
         with ThreadPoolExecutor(max_workers=DOWNLOAD_CONCURRENCY) as executor:
             executor.map(_download_one, valid_paths)
+
+        self._downloaded_files = OrderedDict()
+        for path in valid_paths:
+            if path in results:
+                self._downloaded_files[path] = results[path]
 
         total_downloaded_bytes = sum(len(c.encode("utf-8")) for c in self._downloaded_files.values())
         debug(self.get_debug_context_repo(), "Downloaded files", {

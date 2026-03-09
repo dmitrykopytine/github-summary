@@ -142,6 +142,7 @@ Free-form notes for the second pass. Include:
 
 JSON key "files":
 Array of file paths (strings) to download for the second pass.
+Order the array by importance — most important files first. If the download budget is exceeded, files at the end of the list will be dropped. Similarly, if the model context is truncated, files at the end are truncated or removed first.
 Rules:
 - Select at most {DOWNLOAD_LIMIT_FILES} files.
 - Total size of selected files must not exceed {DOWNLOAD_LIMIT_KB} KB.
