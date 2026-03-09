@@ -1,3 +1,8 @@
+import sys
+if sys.version_info < (3, 10):
+    print("Python 3.10+ is required (current: %s)" % sys.version)
+    sys.exit(1)
+
 import asyncio
 import contextvars
 import json
