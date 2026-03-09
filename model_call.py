@@ -1,4 +1,3 @@
-import os
 import time
 from typing import TypeVar
 
@@ -6,13 +5,14 @@ import anthropic
 from pydantic import BaseModel
 
 from config import (
-    ANTHROPIC_API_KEY_ENV_VAR,
     DEBUG,
     MODEL,
     MODEL_CALL_RETRIES,
     MODEL_CALL_RETRY_DELAY_MS,
 )
 from debug import debug
+from model_client import ModelClient
+from model_count_tokens import ModelCountTokens
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -27,13 +27,9 @@ class ModelCall:
         "Return ONLY the JSON object, no markdown, no code blocks, no extra text."
     )
 
-    @staticmethod
-    def check_api_key() -> bool:
-        key = os.environ.get(ANTHROPIC_API_KEY_ENV_VAR, "")
-        return bool(key.strip())
-
     def __init__(
         self,
+        model_client: ModelClient,
         request_content: str,
         output_schema: type[T],
         max_input_tokens: int,
@@ -43,9 +39,7 @@ class ModelCall:
         debug_context_repo: str = "",
         debug_context_call_title: str = "",
     ):
-        self._client = anthropic.Anthropic(
-            api_key=os.environ.get(ANTHROPIC_API_KEY_ENV_VAR),
-        )
+        self._client = model_client.client
         self._debug_context_repo = debug_context_repo
         self._debug_context_call_title = debug_context_call_title
         self._max_input_tokens = max_input_tokens
@@ -58,6 +52,8 @@ class ModelCall:
         self._raw_output: str | None = None
 
         full_prompt = self._build_prompt(request_content, files or [])
+        if self._is_error:
+            return
 
         retries_left = retry_number if retry_number is not None else MODEL_CALL_RETRIES
 
@@ -91,21 +87,12 @@ class ModelCall:
     def _build_prompt(self, request_content: str, files: list[dict]) -> str:
         contents = [f["content"] for f in files]
         contents = self._truncate_files_if_needed(request_content, files, contents)
+        if self._is_error:
+            return ""
         prompt = self._assemble_prompt(request_content, files, contents)
         prompt = self._truncate_prompt_if_needed(prompt)
-        if DEBUG:
-            file_parts = self._assemble_file_parts(files, contents)
-            def _stat(part: str) -> dict:
-                chars = len(part)
-                tokens = self.count_tokens(part)
-                return {
-                    "chars": chars,
-                    "tokens": tokens,
-                    "chars/token": round(chars / tokens, 2) if tokens else 0,
-                }
-            stats = [{"part": "request_content", **_stat(request_content)}]
-            for i, f in enumerate(files):
-                stats.append({"part": f["description"], **_stat(file_parts[i])})
+        if self._is_error:
+            return ""
         return prompt
 
     def _truncate_files_if_needed(
@@ -113,6 +100,8 @@ class ModelCall:
     ) -> list[str]:
         full_prompt = self._assemble_prompt(request_content, files, contents)
         token_count = self.count_tokens(full_prompt)
+        if self._is_error:
+            return contents
         if token_count <= self._max_input_tokens:
             self._debug("Input fits within token limit", {
                 "input_tokens": token_count,
@@ -136,6 +125,8 @@ class ModelCall:
 
     def _truncate_prompt_if_needed(self, prompt: str) -> str:
         token_count = self.count_tokens(prompt)
+        if self._is_error:
+            return prompt
         if token_count <= self._max_input_tokens:
             return prompt
 
@@ -238,23 +229,23 @@ class ModelCall:
                 self._raw_output = response.content[0].text
         except anthropic.AuthenticationError as e:
             self._is_error = True
-            self._error_message = "Authentication error"
+            self._error_message = "LLM call failed: Authentication error"
             self._error_http_code = e.status_code
             debug_detail = str(e)
         except anthropic.APIStatusError as e:
             self._is_error = True
-            self._error_message = "Model call failed"
+            self._error_message = "LLM call failed"
             self._error_http_code = e.status_code
             debug_detail = e.message
         except Exception as e:
             self._is_error = True
-            self._error_message = "Model call failed"
+            self._error_message = "LLM call failed"
             self._error_http_code = getattr(e, "status_code", None)
             debug_detail = str(e)
 
         if not self._is_error and self._parsed is None:
             self._is_error = True
-            self._error_message = "Model returned empty or unparseable response"
+            self._error_message = "LLM call failed: LLM returned empty or unparseable response"
 
         if self._is_error:
             self._debug("Model call failed", {
@@ -266,13 +257,18 @@ class ModelCall:
                 "raw_output_first_100_chars": self._raw_output[:100] if self._raw_output else None,
             })
 
-    def count_tokens(self, request_content: str) -> int:
-        result = self._client.messages.count_tokens(
-            model=MODEL,
-            system=self.SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": request_content}],
+    def count_tokens(self, content: str) -> int:
+        counter = ModelCountTokens(
+            self._client,
+            content,
+            self.SYSTEM_PROMPT,
+            debug_context_repo=self._debug_context_repo,
+            debug_context_call_title=self._debug_context_call_title,
         )
-        return result.input_tokens
+        if counter.is_error:
+            self._is_error = True
+            self._error_message = counter.error_message
+        return counter.token_count
 
     @property
     def is_error(self) -> bool:
