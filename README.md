@@ -86,10 +86,16 @@ All constants are in `config.py`:
 5. **Second pass** — sends the first-pass drafts together with the downloaded files to Claude. The model resolves uncertainties and produces the final polished response.
 6. Returns the result as JSON with `summary`, `technologies`, and `structure` fields.
 
-The context window (`MODEL_MAX_TOKENS_PER_CALL`) is split between input and output (20% of it goes to output, capped by `MODEL_MAX_OUTPUT_TOKENS_PER_CALL`), the rest is input. If the input exceeds its quota, it is truncated. The amount to cut is estimated from the character-to-token ratio of the actual content, scaled by a pessimism factor (`_TRUNCATION_TARGET_RATIO`, default 0.85) to account for varying token density across content types. Truncation happens in two stages:
+The context window (`MODEL_MAX_TOKENS_PER_CALL`) is split between input and output (20% of it goes to output, capped by `MODEL_MAX_OUTPUT_TOKENS_PER_CALL`), the rest is input. If the input exceeds its quota, it is truncated. The amount to cut is estimated from the character-to-token ratio of the actual content, scaled by a pessimism factor (`_TRUNCATION_TARGET_RATIO` in the code, default 0.85) to account for varying token density across content types. Truncation happens in two stages:
 
 1. **File-level truncation** — truncatable files (README, file tree, downloaded sources) are shortened. The longest files are leveled down first (e.g. files of 1k, 2k, 3k, 8k chars truncated to a total budget become 1k, 2k, 2k, 2k). Truncation snaps to the nearest newline to avoid cutting mid-line when possible.
 2. **Whole-prompt truncation** — if the input still exceeds the limit after file-level truncation (e.g. the ratio estimate was off, or there aren't enough truncatable files), the entire assembled prompt is proportionally cut as a fallback.
+
+### Known Issues
+
+1. Repos and files with non-UTF-8 encoding are not tested.
+2. GitHub truncates the tree for repos with over 100,000 entries. We do not detect or handle this, so some files may be omitted from the context.
+3. For large repos (e.g. torvalds/linux) the tree is heavily cropped to fit the context window, and the model may hallucinate file paths to download. Such paths are filtered out. Observed only on torvalds/linux so far.
 
 ## API
 
