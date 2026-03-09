@@ -14,10 +14,6 @@ from config import (
 )
 from debug import debug
 
-_client = anthropic.Anthropic(
-    api_key=os.environ.get(ANTHROPIC_API_KEY_ENV_VAR),
-)
-
 T = TypeVar("T", bound=BaseModel)
 
 # Pessimism ratio for char-based token estimation — accounts for how
@@ -31,6 +27,11 @@ class ModelCall:
         "Return ONLY the JSON object, no markdown, no code blocks, no extra text."
     )
 
+    @staticmethod
+    def check_api_key() -> bool:
+        key = os.environ.get(ANTHROPIC_API_KEY_ENV_VAR, "")
+        return bool(key.strip())
+
     def __init__(
         self,
         request_content: str,
@@ -42,6 +43,9 @@ class ModelCall:
         debug_context_repo: str = "",
         debug_context_call_title: str = "",
     ):
+        self._client = anthropic.Anthropic(
+            api_key=os.environ.get(ANTHROPIC_API_KEY_ENV_VAR),
+        )
         self._debug_context_repo = debug_context_repo
         self._debug_context_call_title = debug_context_call_title
         self._max_input_tokens = max_input_tokens
@@ -211,8 +215,10 @@ class ModelCall:
         self._output_tokens = None
         self._raw_output = None
 
+        debug_detail: str | None = None
+
         try:
-            response = _client.beta.messages.parse(
+            response = self._client.beta.messages.parse(
                 model=MODEL,
                 max_tokens=self._max_output_tokens,
                 betas=["structured-outputs-2025-11-13"],
@@ -230,14 +236,21 @@ class ModelCall:
             self._output_tokens = response.usage.output_tokens
             if response.content:
                 self._raw_output = response.content[0].text
+        except anthropic.AuthenticationError as e:
+            self._is_error = True
+            self._error_message = "Authentication error"
+            self._error_http_code = e.status_code
+            debug_detail = str(e)
         except anthropic.APIStatusError as e:
             self._is_error = True
-            self._error_message = f"Model call failed: {e.message}"
+            self._error_message = "Model call failed"
             self._error_http_code = e.status_code
+            debug_detail = e.message
         except Exception as e:
             self._is_error = True
-            self._error_message = f"Model call failed: {e}"
+            self._error_message = "Model call failed"
             self._error_http_code = getattr(e, "status_code", None)
+            debug_detail = str(e)
 
         if not self._is_error and self._parsed is None:
             self._is_error = True
@@ -246,6 +259,7 @@ class ModelCall:
         if self._is_error:
             self._debug("Model call failed", {
                 "error_message": self._error_message,
+                "debug_detail": debug_detail,
                 "error_http_code": self._error_http_code,
                 "input_tokens": self._input_tokens,
                 "output_tokens": self._output_tokens,
@@ -253,7 +267,7 @@ class ModelCall:
             })
 
     def count_tokens(self, request_content: str) -> int:
-        result = _client.messages.count_tokens(
+        result = self._client.messages.count_tokens(
             model=MODEL,
             system=self.SYSTEM_PROMPT,
             messages=[{"role": "user", "content": request_content}],

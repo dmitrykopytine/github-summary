@@ -25,6 +25,11 @@ from github_repo import GithubRepo
 from github_url_parser import GithubUrlParser
 from model_call import ModelCall
 
+if not ModelCall.check_api_key():
+    from config import ANTHROPIC_API_KEY_ENV_VAR
+    print("Error: environment variable %s is not set or empty" % ANTHROPIC_API_KEY_ENV_VAR)
+    sys.exit(2)
+
 app = FastAPI()
 
 _debug_context_repo: contextvars.ContextVar[str] = contextvars.ContextVar(
@@ -158,7 +163,7 @@ Rules:
         debug_context_call_title="First pass",
     )
     if model.is_error:
-        raise AppError("LLM call failed", 502)
+        raise AppError(f"LLM call failed ({model.error_message})", 502)
 
     return model
 
@@ -212,7 +217,7 @@ Do not:
         debug_context_call_title="Second final pass",
     )
     if model.is_error:
-        raise AppError("LLM call failed", 502)
+        raise AppError(f"LLM call failed ({model.error_message})", 502)
 
     return model
 
