@@ -127,6 +127,18 @@ curl -X POST http://localhost:8000/summarize \
 }
 ```
 
+## Running tests
+
+```bash
+python -m pytest
+```
+
+With verbose output:
+
+```bash
+python -m pytest -v
+```
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
