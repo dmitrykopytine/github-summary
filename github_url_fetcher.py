@@ -42,6 +42,7 @@ class GithubUrlFetcher:
         self._debug_context_call_title = debug_context_call_title
 
         self._raw_response: str | None = None
+        self._parsed_json: dict | list | None = None
         self._http_code: int | None = None
         self._error_code: str | None = None
         self._is_error: bool = False
@@ -93,6 +94,10 @@ class GithubUrlFetcher:
         return self._raw_response
 
     @property
+    def parsed_json(self) -> dict | list | None:
+        return self._parsed_json
+
+    @property
     def http_code(self) -> int | None:
         return self._http_code
 
@@ -123,6 +128,7 @@ class GithubUrlFetcher:
 
     def _attempt(self):
         self._raw_response = None
+        self._parsed_json = None
         self._http_code = None
         self._error_code = None
         self._is_error = False
@@ -199,7 +205,7 @@ class GithubUrlFetcher:
                 self._error_message = "Empty response"
                 return
             try:
-                json.loads(self._raw_response)
+                self._parsed_json = json.loads(self._raw_response)
             except json.JSONDecodeError:
                 self._is_error = True
                 self._error_code = "json_parse"

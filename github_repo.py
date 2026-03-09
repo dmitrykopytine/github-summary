@@ -88,7 +88,9 @@ class GithubRepo:
                 raise AppError(f"Repository not found or is private ({self._owner_name}/{self._repo_name})", 422)
             raise AppError("Failed to fetch repository info: " + fetcher.error_message, 502)
 
-        data = json.loads(fetcher.raw_response)
+        data = fetcher.parsed_json
+        if not isinstance(data, dict):
+            raise AppError("Failed to fetch repository info: Invalid JSON data", 502)
         self._full_name = data.get("full_name", "")
         self._description = data.get("description", "") or ""
         self._default_branch = data.get("default_branch", "")
@@ -135,7 +137,9 @@ class GithubRepo:
                 return
             raise AppError("Failed to fetch repo tree: " + fetcher.error_message, 502)
 
-        data = json.loads(fetcher.raw_response)
+        data = fetcher.parsed_json
+        if not isinstance(data, dict):
+            raise AppError("Failed to fetch repo tree: Invalid JSON data", 502)
         tree_items = data.get("tree", [])
         entries = []
         for item in tree_items:
@@ -153,7 +157,6 @@ class GithubRepo:
             self._tree[path] = {"size": size, "url": url}
 
     def download_files(self, file_paths: list[str]) -> None:
-        download_limit_one_file_max_bytes = DOWNLOAD_LIMIT_ONE_FILE_MAX_KB * 1024
         valid_paths = []
         for path in file_paths:
             if path not in self._tree:
@@ -171,7 +174,7 @@ class GithubRepo:
             url = self._tree[path]["url"]
             fetcher = GithubUrlFetcher(
                 url,
-                download_max_size_bytes=download_limit_one_file_max_bytes,
+                download_max_size_bytes=DOWNLOAD_LIMIT_ONE_FILE_MAX_KB * 1024,
                 debug_context_repo=self.get_debug_context_repo(),
                 debug_context_call_title=f"Download {path}",
             )
