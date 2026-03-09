@@ -251,6 +251,21 @@ async def app_error_handler(request: Request, exc: AppError):
     )
 
 
+@app.exception_handler(Exception)
+async def generic_error_handler(request: Request, exc: Exception):
+    debug(_debug_context_repo.get(), "Responding with failure (500)", {"debug_detail": str(exc)})
+    indent = 2 if DEBUG else None
+    return Response(
+        content=json.dumps(
+            {"status": "error", "message": "Internal server error"},
+            indent=indent,
+            ensure_ascii=False,
+        ),
+        status_code=500,
+        media_type="application/json",
+    )
+
+
 if __name__ == "__main__":
     import uvicorn
 
