@@ -55,6 +55,7 @@ class GithubRepo:
     def __init__(self, owner_name: str, repo_name: str):
         self._owner_name = owner_name
         self._repo_name = repo_name
+        self._tree_as_text: str | None = None
         self._info_url = f"https://api.github.com/repos/{owner_name}/{repo_name}"
         self._readme_url = f"https://api.github.com/repos/{owner_name}/{repo_name}/readme"
 
@@ -141,17 +142,20 @@ class GithubRepo:
 
         data = json.loads(fetcher.raw_response)
         tree_items = data.get("tree", [])
-        self._tree: OrderedDict[str, dict] = OrderedDict()
+        entries = []
         for item in tree_items:
             if item.get("type") != "blob":
                 continue
             path = item.get("path", "")
             if _is_noise_path(path):
                 continue
-            self._tree[path] = {
-                "size": item.get("size", 0),
-                "url": item.get("url", ""),
-            }
+            entries.append((path, item.get("size", 0), item.get("url", "")))
+        # Sort by depth so top-level files come first — important because
+        # the tree may be truncated to fit the model context window.
+        entries.sort(key=lambda e: e[0].count("/"))
+        self._tree: OrderedDict[str, dict] = OrderedDict()
+        for path, size, url in entries:
+            self._tree[path] = {"size": size, "url": url}
 
     def download_files(self, file_paths: list[str], max_file_count: int, max_total_size_kb: float) -> None:
         max_total_size_bytes = int(max_total_size_kb * 1024)
@@ -204,12 +208,16 @@ class GithubRepo:
         return [{"path": path, "content": content} for path, content in self._downloaded_files.items()]
 
     def get_tree_as_text(self) -> str:
+        if self._tree_as_text is not None:
+            return self._tree_as_text
         if not self._tree:
-            return "(empty repository — no files)"
-        lines = []
-        for path, info in self._tree.items():
-            lines.append(f"{path} ({info['size']})")
-        return "\n".join(lines)
+            self._tree_as_text = "(empty repository — no files)"
+        else:
+            lines = []
+            for path, info in self._tree.items():
+                lines.append(f"{path} ({info['size']})")
+            self._tree_as_text = "\n".join(lines)
+        return self._tree_as_text
 
     @property
     def info_url(self) -> str:

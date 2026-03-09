@@ -13,7 +13,7 @@ A FastAPI service that summarizes GitHub repositories using the Anthropic Claude
 | Variable            | Required | Description                                                                                                               |
 | ------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------- |
 | `ANTHROPIC_API_KEY` | yes      | Anthropic API key for Claude model calls                                                                                  |
-| `GITHUB_TOKEN`      | no       | GitHub personal access token — required for private repos, raises API rate limit from 60 to 5,000 req/hr for public repos |
+| `GITHUB_TOKEN`      | no       | GitHub personal access token — required for private repos; for public repos raises the API rate limit from 60 to 5,000 req/hr |
 
 
 ## Setup
@@ -65,7 +65,7 @@ All constants are in `config.py`:
 
 - `DEBUG` — enables pretty-printed JSON responses and debug messages in the server console.
 - `BIND_HOST`, `BIND_PORT` — server bind address (default `0.0.0.0:8000`).
-- `MODEL`, `MODEL_MAX_TOKENS_PER_CALL` — Anthropic model name and token budget (input + output) per call. The default (15,000 tokens) is intentionally conservative to work on any Anthropic tier. The model supports significantly higher limits, especially on Tier 2+. Increase this value according to your plan to get more detailed and precise answers.
+- `MODEL`, `MODEL_MAX_TOKENS_PER_CALL` — Anthropic model name and total token budget (input + output) per call. The default (15,000 tokens) is conservative and works on any Anthropic tier. The model supports significantly higher limits, especially on Tier 2+. Increase this value to get more detailed and precise answers.
 - `MODEL_CALL_RETRIES`, `MODEL_CALL_RETRY_DELAY_MS` — retry settings for model calls.
 - `DOWNLOAD_RETRIES`, `DOWNLOAD_RETRY_DELAY_MS` — retry settings for GitHub API requests.
 - `DOWNLOAD_CONCURRENCY` — max parallel file downloads from GitHub.
@@ -74,16 +74,16 @@ All constants are in `config.py`:
 ## How it works
 
 1. Receives a GitHub repository URL via the `/summarize` endpoint. Works with public repos by default; private repos require a `GITHUB_TOKEN`.
-2. Parses the URL and fetches repository info, README, and file tree from the GitHub API (in parallel).
+2. Parses the URL and fetches repository info, README, and file tree from the GitHub API (in parallel). The file tree is sorted by depth so that top-level files appear first — if the tree is later truncated to fit the context window, the most important structural information is preserved. Note: the GitHub API itself may truncate very large trees (100,000+ entries) before they reach the app.
 3. **First pass** — sends repo info, README, and file tree to Claude. The model produces draft summaries with uncertainty annotations (e.g. "uses Redis (CHECK version in docker-compose.yml)") and selects key files to download.
 4. Downloads the selected files from GitHub (in parallel, with size/count limits).
 5. **Second pass** — sends the first-pass drafts together with the downloaded files to Claude. The model resolves uncertainties and produces the final polished response.
 6. Returns the result as JSON with `summary`, `technologies`, and `structure` fields.
 
-The available context window (`MODEL_MAX_TOKENS_PER_CALL`) is split 80/20 between input and output. If the input exceeds 85% of the allowed input quota (controlled by `_TRUNCATION_TARGET_RATIO` in the code, default 0.85), it is truncated in two stages:
+The context window (`MODEL_MAX_TOKENS_PER_CALL`) is split 80/20 between input and output. If the input exceeds its quota (80% of `MODEL_MAX_TOKENS_PER_CALL`), it is truncated. The amount to cut is estimated from the character-to-token ratio of the actual content, scaled by a pessimism factor (`_TRUNCATION_TARGET_RATIO`, default 0.85) to account for varying token density across content types. Truncation happens in two stages:
 
 1. **File-level truncation** — truncatable files (README, file tree, downloaded sources) are shortened. The longest files are leveled down first (e.g. files of 1k, 2k, 3k, 8k chars truncated to a total budget become 1k, 2k, 2k, 2k). Truncation snaps to the nearest newline to avoid cutting mid-line when possible.
-2. **Whole-prompt truncation** — if the input still exceeds the limit after file-level truncation, the entire assembled prompt is proportionally cut as a fallback.
+2. **Whole-prompt truncation** — if the input still exceeds the limit after file-level truncation (e.g. the ratio estimate was off, or there aren't enough truncatable files), the entire assembled prompt is proportionally cut as a fallback.
 
 ## API
 
