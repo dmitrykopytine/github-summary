@@ -20,13 +20,15 @@ MODEL_CALL_RETRY_DELAY_MS = 800
 # without it, but having it raises the rate limit from 60 to 5000 req/hr.
 GITHUB_TOKEN_ENV_VAR = "GITHUB_TOKEN"
 
-# Retry settings for GitHub API / file downloads
-DOWNLOAD_RETRIES = 1
-DOWNLOAD_RETRY_DELAY_MS = 800
-
-# How many files to download in parallel from GitHub
-DOWNLOAD_CONCURRENCY = 6
-
 # Limits for the file download (model picks files to analyze)
 DOWNLOAD_LIMIT_FILES = 12
 DOWNLOAD_LIMIT_ONE_FILE_MAX_KB = 1024
+# How many files to download in parallel from GitHub
+DOWNLOAD_CONCURRENCY = 6
+# Retry settings for GitHub API / file downloads
+DOWNLOAD_RETRIES = 1
+DOWNLOAD_RETRY_DELAY_MS = 800
+# Timeout for individual socket operations (connect, read chunk)
+DOWNLOAD_SOCKET_TIMEOUT_SEC = 30
+# Total wall-clock timeout for downloading a single file
+DOWNLOAD_ONE_FILE_TIMEOUT_SEC = 60

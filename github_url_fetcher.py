@@ -5,8 +5,18 @@ import time
 import urllib.error
 import urllib.request
 
-from config import DOWNLOAD_RETRIES, DOWNLOAD_RETRY_DELAY_MS, GITHUB_TOKEN_ENV_VAR
+from config import (
+    DOWNLOAD_ONE_FILE_TIMEOUT_SEC,
+    DOWNLOAD_RETRIES,
+    DOWNLOAD_RETRY_DELAY_MS,
+    DOWNLOAD_SOCKET_TIMEOUT_SEC,
+    GITHUB_TOKEN_ENV_VAR,
+)
 from debug import debug
+
+
+class _DownloadTimeoutError(Exception):
+    pass
 
 
 def _get_github_token() -> str | None:
@@ -132,7 +142,7 @@ class GithubUrlFetcher:
             req.add_header("Authorization", f"Bearer {token}")
 
         try:
-            with urllib.request.urlopen(req, timeout=30) as resp:
+            with urllib.request.urlopen(req, timeout=DOWNLOAD_SOCKET_TIMEOUT_SEC) as resp:
                 self._http_code = resp.status
                 content_type = resp.headers.get("Content-Type", "")
                 if not self._is_json and not self._is_text_content_type(content_type):
@@ -145,6 +155,12 @@ class GithubUrlFetcher:
                     self._raw_response, self._is_truncated_response = self._read_limited(resp)
                 else:
                     self._raw_response = resp.read().decode("utf-8", errors="ignore")
+        except _DownloadTimeoutError:
+            self._is_error = True
+            self._error_code = "download_timeout"
+            self._error_message = "Download timeout"
+            self._debug_detail = f"exceeded {DOWNLOAD_ONE_FILE_TIMEOUT_SEC}s"
+            return
         except urllib.error.HTTPError as e:
             self._http_code = e.code
             self._is_error = True
@@ -195,7 +211,11 @@ class GithubUrlFetcher:
         chunks = []
         total = 0
         truncated = False
+        start = time.monotonic()
         while True:
+            if time.monotonic() - start > DOWNLOAD_ONE_FILE_TIMEOUT_SEC:
+                resp.close()
+                raise _DownloadTimeoutError()
             chunk = resp.read(_READ_CHUNK_SIZE)
             if not chunk:
                 break

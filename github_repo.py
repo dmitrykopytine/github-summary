@@ -86,7 +86,7 @@ class GithubRepo:
         if fetcher.is_error:
             if fetcher.http_code == 404:
                 raise AppError(f"Repository not found or is private ({self._owner_name}/{self._repo_name})", 422)
-            raise AppError("Cannot fetch repository info: " + fetcher.error_message, 502)
+            raise AppError("Failed to fetch repository info: " + fetcher.error_message, 502)
 
         data = json.loads(fetcher.raw_response)
         self._full_name = data.get("full_name", "")
@@ -116,7 +116,7 @@ class GithubRepo:
                 debug(self.get_debug_context_repo(), "Readme is not available")
                 self._readme = ""
                 return
-            raise AppError("Failed to download README: " + fetcher.error_message, 502)
+            raise AppError("Failed to fetch README: " + fetcher.error_message, 502)
 
         self._readme = fetcher.raw_response
 
@@ -133,7 +133,7 @@ class GithubRepo:
                 debug(self.get_debug_context_repo(), "Repository is empty, no tree available")
                 self._tree: OrderedDict[str, dict] = OrderedDict()
                 return
-            raise AppError("Failed to fetch project tree README: " + fetcher.error_message, 502)
+            raise AppError("Failed to fetch repo tree: " + fetcher.error_message, 502)
 
         data = json.loads(fetcher.raw_response)
         tree_items = data.get("tree", [])

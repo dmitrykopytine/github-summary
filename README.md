@@ -9,6 +9,7 @@ A FastAPI service that summarizes GitHub repositories using the Anthropic Claude
 
 ## Environment variables
 
+Variable names are defaults and can be changed in `config.py`.
 
 | Variable            | Required | Description                                                                                                                   |
 | ------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------- |
@@ -65,12 +66,16 @@ All constants are in `config.py`:
 
 - `DEBUG` — enables pretty-printed JSON responses and debug messages in the server console.
 - `BIND_HOST`, `BIND_PORT` — server bind address (default `0.0.0.0:8000`).
+- `ANTHROPIC_API_KEY_ENV_VAR` — name of the env var for the Anthropic API key (mandatory).
 - `MODEL`, `MODEL_MAX_TOKENS_PER_CALL` — Anthropic model name and total token budget (input + output) per call. Each request to `/summarize` makes 2 model calls (first pass + second pass). The default (15,000 tokens) is conservative and works on any Anthropic tier. The model supports significantly higher limits, especially on Tier 2+. Increase this value to get more detailed and precise answers.
 - `MODEL_MAX_OUTPUT_TOKENS_PER_CALL` — hard cap on output tokens per call (default 8,192). This is needed because when too many output tokens are requested, the Anthropic API may require streaming, which is not supported by this app. The actual output budget is `min(MODEL_MAX_TOKENS_PER_CALL * 0.2, MODEL_MAX_OUTPUT_TOKENS_PER_CALL)`.
 - `MODEL_CALL_RETRIES`, `MODEL_CALL_RETRY_DELAY_MS` — retry settings for model calls.
-- `DOWNLOAD_RETRIES`, `DOWNLOAD_RETRY_DELAY_MS` — retry settings for GitHub API requests.
-- `DOWNLOAD_CONCURRENCY` — max parallel file downloads from GitHub.
+- `GITHUB_TOKEN_ENV_VAR` — name of the env var for the GitHub token. The env var does not have to exist — the app works without it, but having it raises the API rate limit from 60 to 5,000 req/hr and enables access to private repos.
 - `DOWNLOAD_LIMIT_FILES`, `DOWNLOAD_LIMIT_ONE_FILE_MAX_KB` — limits for the file download stage (max files, per-file size cap). Files exceeding the per-file limit are truncated at the HTTP level without downloading the full response.
+- `DOWNLOAD_CONCURRENCY` — max parallel file downloads from GitHub.
+- `DOWNLOAD_RETRIES`, `DOWNLOAD_RETRY_DELAY_MS` — retry settings for GitHub API requests.
+- `DOWNLOAD_SOCKET_TIMEOUT_SEC` — timeout for individual socket operations like connect and read (default 30s).
+- `DOWNLOAD_ONE_FILE_TIMEOUT_SEC` — total wall-clock timeout for downloading a single file (default 60s). Enforced during chunked reading; the connection is closed if exceeded.
 
 ## How it works
 
