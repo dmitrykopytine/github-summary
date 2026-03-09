@@ -146,7 +146,6 @@ Rules:
         {"description": "Repository tree, each line contains a file path and its size in bytes", "content": github_repo.get_tree_as_text(), "truncatable": True},
         {"description": "README.md file", "content": github_repo.readme, "truncatable": True},
     ]
-    print(github_repo.get_tree_as_text());
     max_input_tokens = int(MODEL_MAX_TOKENS_PER_CALL * 0.8)
     max_output_tokens = int(MODEL_MAX_TOKENS_PER_CALL * 0.2)
     model = ModelCall(
