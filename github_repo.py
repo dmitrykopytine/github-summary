@@ -7,7 +7,6 @@ from config import (
     DOWNLOAD_CONCURRENCY,
     DOWNLOAD_LIMIT_FILES,
     DOWNLOAD_LIMIT_ONE_FILE_MAX_KB,
-    DOWNLOAD_LIMIT_TOTAL_MAX_KB,
 )
 from debug import debug
 from exceptions import AppError
@@ -154,26 +153,16 @@ class GithubRepo:
             self._tree[path] = {"size": size, "url": url}
 
     def download_files(self, file_paths: list[str]) -> None:
-        download_limit_total_max_bytes = DOWNLOAD_LIMIT_TOTAL_MAX_KB * 1024
         download_limit_one_file_max_bytes = DOWNLOAD_LIMIT_ONE_FILE_MAX_KB * 1024
         valid_paths = []
-        total_size = 0
         for path in file_paths:
             if path not in self._tree:
                 debug(self.get_debug_context_repo(), "Skipping file not in tree", {"path": path})
                 continue
-            file_size = self._tree[path]["size"]
             if len(valid_paths) >= DOWNLOAD_LIMIT_FILES:
                 debug(self.get_debug_context_repo(), "Reached max file count, skipping", {"path": path})
                 break
-            if total_size + file_size > download_limit_total_max_bytes:
-                debug(self.get_debug_context_repo(), "Would exceed max size, skipping", {
-                    "path": path,
-                    "size": file_size,
-                })
-                continue
             valid_paths.append(path)
-            total_size += file_size
 
         results: dict[str, str] = {}
         lock = threading.Lock()

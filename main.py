@@ -18,7 +18,6 @@ from config import (
     DEBUG,
     DOWNLOAD_LIMIT_FILES,
     DOWNLOAD_LIMIT_ONE_FILE_MAX_KB,
-    DOWNLOAD_LIMIT_TOTAL_MAX_KB,
     MODEL_MAX_TOKENS_PER_CALL,
 )
 from exceptions import AppError
@@ -144,7 +143,7 @@ Array of file paths (strings) to download for the second pass.
 Order the array by importance — most important files first. If the download budget is exceeded, files at the end of the list will be dropped. Similarly, if the model context is truncated, files at the end are truncated or removed first.
 Rules:
 - Select at most {DOWNLOAD_LIMIT_FILES} files.
-- Total size of selected files must not exceed {DOWNLOAD_LIMIT_TOTAL_MAX_KB} KB. Each individual file must not exceed {DOWNLOAD_LIMIT_ONE_FILE_MAX_KB} KB.
+- Files larger than {DOWNLOAD_LIMIT_ONE_FILE_MAX_KB} KB will still be provided but truncated (only the first {DOWNLOAD_LIMIT_ONE_FILE_MAX_KB} KB will be downloaded). Prefer smaller files when possible.
 - Prioritize files that resolve your uncertainties: package manifests, config files, entry points, key source files.
 - Do NOT include binary files, images, lock files, or generated files.
 - Only select files that exist in the repository tree.

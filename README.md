@@ -70,7 +70,7 @@ All constants are in `config.py`:
 - `MODEL_CALL_RETRIES`, `MODEL_CALL_RETRY_DELAY_MS` — retry settings for model calls.
 - `DOWNLOAD_RETRIES`, `DOWNLOAD_RETRY_DELAY_MS` — retry settings for GitHub API requests.
 - `DOWNLOAD_CONCURRENCY` — max parallel file downloads from GitHub.
-- `DOWNLOAD_LIMIT_FILES`, `DOWNLOAD_LIMIT_TOTAL_MAX_KB`, `DOWNLOAD_LIMIT_ONE_FILE_MAX_KB` — limits for the file download stage (max files, total size budget, per-file size cap). Files exceeding the per-file limit are dropped at the HTTP level without downloading the full response.
+- `DOWNLOAD_LIMIT_FILES`, `DOWNLOAD_LIMIT_ONE_FILE_MAX_KB` — limits for the file download stage (max files, per-file size cap). Files exceeding the per-file limit are truncated at the HTTP level without downloading the full response.
 
 ## How it works
 

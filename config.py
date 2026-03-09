@@ -29,5 +29,4 @@ DOWNLOAD_CONCURRENCY = 6
 
 # Limits for the file download (model picks files to analyze)
 DOWNLOAD_LIMIT_FILES = 12
-DOWNLOAD_LIMIT_TOTAL_MAX_KB = 10240
 DOWNLOAD_LIMIT_ONE_FILE_MAX_KB = 1024
