@@ -21,7 +21,7 @@ _client = anthropic.Anthropic(
 T = TypeVar("T", bound=BaseModel)
 
 # Pessimism ratio for char-based token estimation — accounts for how
-# inaccurate the chars-to-tokens conversion can be across content types.
+# inaccurate the chars-to-tokens conversion can be across files.
 _TRUNCATION_TARGET_RATIO = 0.85
 
 
