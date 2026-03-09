@@ -8,11 +8,14 @@ BIND_PORT = 8000
 # Anthropic LLM settings (API key is read from this env var)
 ANTHROPIC_API_KEY_ENV_VAR = "ANTHROPIC_API_KEY"
 MODEL = "claude-sonnet-4-6"
-# Maximum total tokens per call, input (80%) + output (20%).
-MODEL_MAX_TOKENS_PER_CALL = 15000
-# Cap on output tokens per call. If too many output tokens are requested,
+# Maximum total tokens per call (input + output). Output tokens are capped separately.
+#   output budget = min(MODEL_MAX_TOKENS_PER_CALL * 0.2, MODEL_MAX_OUTPUT_TOKENS_PER_CALL)
+#   input budget = MODEL_MAX_TOKENS_PER_CALL - output budget
+# The output cap is required because if too many output tokens are requested,
 # the Anthropic API may require streaming, which is not supported here.
+MODEL_MAX_TOKENS_PER_CALL = 15000  # claude-sonnet-4-6 supports up to 200000
 MODEL_MAX_OUTPUT_TOKENS_PER_CALL = 8192
+# Retries for failed LLM calls
 MODEL_CALL_RETRIES = 2
 MODEL_CALL_RETRY_DELAY_MS = 800
 
@@ -20,8 +23,10 @@ MODEL_CALL_RETRY_DELAY_MS = 800
 # without it, but having it raises the rate limit from 60 to 5000 req/hr.
 GITHUB_TOKEN_ENV_VAR = "GITHUB_TOKEN"
 
-# Limits for the file download (model picks files to analyze)
+# Limit for the file download (model picks files to analyze)
 DOWNLOAD_LIMIT_FILES = 12
+# Limit for the size of a single file (if larger, will be truncated)
+# Used when downloading README and files picked by the model
 DOWNLOAD_LIMIT_ONE_FILE_MAX_KB = 1024
 # How many files to download in parallel from GitHub
 DOWNLOAD_CONCURRENCY = 6

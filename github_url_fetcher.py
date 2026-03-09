@@ -6,10 +6,10 @@ import urllib.error
 import urllib.request
 
 from config import (
-    DOWNLOAD_ONE_FILE_TIMEOUT_SEC,
     DOWNLOAD_RETRIES,
     DOWNLOAD_RETRY_DELAY_MS,
     DOWNLOAD_SOCKET_TIMEOUT_SEC,
+    DOWNLOAD_ONE_FILE_TIMEOUT_SEC,
     GITHUB_TOKEN_ENV_VAR,
 )
 from debug import debug
@@ -32,7 +32,6 @@ class GithubUrlFetcher:
         url: str,
         is_json: bool = False,
         download_max_size_bytes: int | None = None,
-        retry_number: int | None = None,
         debug_context_repo: str = "",
         debug_context_call_title: str = "",
     ):
@@ -49,7 +48,7 @@ class GithubUrlFetcher:
         self._error_message: str | None = None
         self._is_truncated_response: bool = False
 
-        retries_left = retry_number if retry_number is not None else DOWNLOAD_RETRIES
+        retries_left = DOWNLOAD_RETRIES
 
         while True:
             self._attempt()

@@ -18,6 +18,7 @@ from config import (
     DEBUG,
     DOWNLOAD_LIMIT_FILES,
     DOWNLOAD_LIMIT_ONE_FILE_MAX_KB,
+    MODEL_MAX_OUTPUT_TOKENS_PER_CALL,
     MODEL_MAX_TOKENS_PER_CALL,
 )
 from exceptions import AppError
@@ -64,6 +65,9 @@ async def summarize(request: SummarizeRequest):
     github_url = validate_github_url(request.github_url)
     parsed_github_url = GithubUrlParser(github_url)
     _debug_context_repo.set(parsed_github_url.get_debug_context_repo())
+    max_output_tokens = min(int(MODEL_MAX_TOKENS_PER_CALL * 0.2), MODEL_MAX_OUTPUT_TOKENS_PER_CALL)
+    max_input_tokens = MODEL_MAX_TOKENS_PER_CALL - max_output_tokens
+
     debug(parsed_github_url.get_debug_context_repo(), "Processing request")
     github_repo = await asyncio.to_thread(
         GithubRepo,
@@ -71,7 +75,12 @@ async def summarize(request: SummarizeRequest):
         parsed_github_url.repo_name,
     )
 
-    first_pass_model = await asyncio.to_thread(call_model_first_pass, github_repo)
+    first_pass_model = await asyncio.to_thread(
+        call_model_first_pass,
+        github_repo,
+        max_input_tokens,
+        max_output_tokens,
+    )
     first_pass = first_pass_model.parsed
     file_paths = first_pass.files
     debug(github_repo.get_debug_context_repo(), "Files to download", {
@@ -87,6 +96,8 @@ async def summarize(request: SummarizeRequest):
         call_model_second_final_pass,
         github_repo,
         first_pass,
+        max_input_tokens,
+        max_output_tokens,
     )
     result = second_final_pass_model.parsed.model_dump()
 
@@ -102,7 +113,7 @@ async def summarize(request: SummarizeRequest):
     )
 
 
-def call_model_first_pass(github_repo: GithubRepo) -> ModelCall:
+def call_model_first_pass(github_repo: GithubRepo, max_input_tokens: int, max_output_tokens: int) -> ModelCall:
     debug(github_repo.get_debug_context_repo(), "First pass: Analyzing repo and selecting files to download")
     request_content = f"""Analyze this GitHub repository. You are performing the first of two passes. Your output will be used by the same model (you) in a second pass, together with downloaded source files, to produce a final polished summary.
 
@@ -153,8 +164,6 @@ Rules:
         {"description": "Repository tree, each line contains a file path and its size in bytes", "content": github_repo.get_tree_as_text(), "truncatable": True},
         {"description": "README.md file", "content": github_repo.readme, "truncatable": True},
     ]
-    max_input_tokens = int(MODEL_MAX_TOKENS_PER_CALL * 0.8)
-    max_output_tokens = int(MODEL_MAX_TOKENS_PER_CALL * 0.2)
     model = ModelCall(
         _model_client,
         request_content,
@@ -171,7 +180,7 @@ Rules:
     return model
 
 
-def call_model_second_final_pass(github_repo: GithubRepo, first_pass: FirstPassModelResponse) -> ModelCall:
+def call_model_second_final_pass(github_repo: GithubRepo, first_pass: FirstPassModelResponse, max_input_tokens: int, max_output_tokens: int) -> ModelCall:
     debug(github_repo.get_debug_context_repo(), "Second final pass: Refining with downloaded files")
     request_content = """You are performing the second pass of a GitHub repository analysis. In the first pass, you analyzed the repo info, README, and file tree and produced drafts with annotations. Now you have access to downloaded source files to verify and improve those drafts.
 
@@ -208,8 +217,6 @@ Do not:
     if downloaded:
         for f in downloaded:
             files.append({"description": f'Downloaded file: {f["path"]}', "content": f["content"], "truncatable": True})
-    max_input_tokens = int(MODEL_MAX_TOKENS_PER_CALL * 0.8)
-    max_output_tokens = int(MODEL_MAX_TOKENS_PER_CALL * 0.2)
     model = ModelCall(
         _model_client,
         request_content,

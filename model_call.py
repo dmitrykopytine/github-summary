@@ -9,7 +9,6 @@ from config import (
     MODEL,
     MODEL_CALL_RETRIES,
     MODEL_CALL_RETRY_DELAY_MS,
-    MODEL_MAX_OUTPUT_TOKENS_PER_CALL,
 )
 from debug import debug
 from model_client import ModelClient
@@ -36,7 +35,6 @@ class ModelCall:
         max_input_tokens: int,
         max_output_tokens: int,
         files: list[dict[str, str]] | None = None,
-        retry_number: int | None = None,
         debug_context_repo: str = "",
         debug_context_call_title: str = "",
     ):
@@ -44,7 +42,7 @@ class ModelCall:
         self._debug_context_repo = debug_context_repo
         self._debug_context_call_title = debug_context_call_title
         self._max_input_tokens = max_input_tokens
-        self._max_output_tokens = min(max_output_tokens, MODEL_MAX_OUTPUT_TOKENS_PER_CALL)
+        self._max_output_tokens = max_output_tokens
         self._is_error: bool = False
         self._error_message: str | None = None
         self._parsed: T | None = None
@@ -56,7 +54,7 @@ class ModelCall:
         if self._is_error:
             return
 
-        retries_left = retry_number if retry_number is not None else MODEL_CALL_RETRIES
+        retries_left = MODEL_CALL_RETRIES
 
         while True:
             self._attempt(full_prompt, output_schema)
