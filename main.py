@@ -71,7 +71,7 @@ async def summarize(request: SummarizeRequest):
         parsed_github_url.repo_name,
     )
 
-    first_pass_model = await asyncio.to_thread(model_first_pass, github_repo)
+    first_pass_model = await asyncio.to_thread(call_model_first_pass, github_repo)
     first_pass = first_pass_model.parsed
     file_paths = first_pass.files
     debug(github_repo.get_debug_context_repo(), "Files to download", {
@@ -83,12 +83,12 @@ async def summarize(request: SummarizeRequest):
         file_paths,
     )
 
-    summary_model = await asyncio.to_thread(
-        model_summarize,
+    second_final_pass_model = await asyncio.to_thread(
+        call_model_second_final_pass,
         github_repo,
         first_pass,
     )
-    result = summary_model.parsed.model_dump()
+    result = second_final_pass_model.parsed.model_dump()
 
     debug(github_repo.get_debug_context_repo(), "Responding with success")
     indent = 2 if DEBUG else None
@@ -102,7 +102,7 @@ async def summarize(request: SummarizeRequest):
     )
 
 
-def model_first_pass(github_repo: GithubRepo) -> ModelCall:
+def call_model_first_pass(github_repo: GithubRepo) -> ModelCall:
     debug(github_repo.get_debug_context_repo(), "First pass: Analyzing repo and selecting files to download")
     request_content = f"""Analyze this GitHub repository. You are performing the first of two passes. Your output will be used by the same model (you) in a second pass, together with downloaded source files, to produce a final polished summary.
 
@@ -171,7 +171,7 @@ Rules:
     return model
 
 
-def model_summarize(github_repo: GithubRepo, first_pass: FirstPassModelResponse) -> ModelCall:
+def call_model_second_final_pass(github_repo: GithubRepo, first_pass: FirstPassModelResponse) -> ModelCall:
     debug(github_repo.get_debug_context_repo(), "Second final pass: Refining with downloaded files")
     request_content = """You are performing the second pass of a GitHub repository analysis. In the first pass, you analyzed the repo info, README, and file tree and produced drafts with annotations. Now you have access to downloaded source files to verify and improve those drafts.
 
