@@ -42,18 +42,18 @@ class ModelCountTokens:
                 break
             except anthropic.AuthenticationError as e:
                 self._is_error = True
-                self._error_message = "Token counting failed: Authentication error"
+                self._error_message = "Authentication error"
                 debug_detail = str(e)
                 break
             except anthropic.APIStatusError as e:
                 self._is_error = True
-                self._error_message = "Token counting failed"
+                self._error_message = "API error"
                 debug_detail = e.message
                 if 400 <= e.status_code < 500:
                     break
             except Exception as e:
                 self._is_error = True
-                self._error_message = "Token counting failed"
+                self._error_message = "Generic error"
                 debug_detail = str(e)
 
             if retries_left <= 0:

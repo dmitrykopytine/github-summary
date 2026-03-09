@@ -13,17 +13,22 @@ def _get_github_token() -> str | None:
     return os.environ.get(GITHUB_TOKEN_ENV_VAR) or None
 
 
+_READ_CHUNK_SIZE = 8192
+
+
 class GithubUrlFetcher:
     def __init__(
         self,
         url: str,
         is_json: bool = False,
+        download_max_size_bytes: int | None = None,
         retry_number: int | None = None,
         debug_context_repo: str = "",
         debug_context_call_title: str = "",
     ):
         self._url = url
         self._is_json = is_json
+        self._download_max_size_bytes = download_max_size_bytes
         self._debug_context_repo = debug_context_repo
         self._debug_context_call_title = debug_context_call_title
 
@@ -32,6 +37,7 @@ class GithubUrlFetcher:
         self._error_code: str | None = None
         self._is_error: bool = False
         self._error_message: str | None = None
+        self._is_truncated_response: bool = False
 
         retries_left = retry_number if retry_number is not None else DOWNLOAD_RETRIES
 
@@ -63,6 +69,12 @@ class GithubUrlFetcher:
                 "http_code": self._http_code,
             })
 
+        if self._is_truncated_response:
+            self._debug("Response truncated", {
+                "url": self._url,
+                "download_max_size_bytes": self._download_max_size_bytes,
+            })
+
     def _debug(self, message: str, context: dict | None = None) -> None:
         prefix = f"{self._debug_context_call_title}: " if self._debug_context_call_title else ""
         debug(self._debug_context_repo, f"{prefix}{message}", context)
@@ -87,6 +99,10 @@ class GithubUrlFetcher:
     def error_message(self) -> str | None:
         return self._error_message
 
+    @property
+    def is_truncated_response(self) -> bool:
+        return self._is_truncated_response
+
     def _should_retry(self) -> bool:
         if self._error_code in ("timeout", "dns", "connection_refused", "network"):
             return True
@@ -102,6 +118,7 @@ class GithubUrlFetcher:
         self._error_code = None
         self._is_error = False
         self._error_message = None
+        self._is_truncated_response = False
         self._debug_detail: str | None = None
 
         req = urllib.request.Request(self._url)
@@ -117,7 +134,10 @@ class GithubUrlFetcher:
         try:
             with urllib.request.urlopen(req, timeout=30) as resp:
                 self._http_code = resp.status
-                self._raw_response = resp.read().decode("utf-8")
+                if self._download_max_size_bytes is not None:
+                    self._raw_response, self._is_truncated_response = self._read_limited(resp)
+                else:
+                    self._raw_response = resp.read().decode("utf-8", errors="ignore")
         except urllib.error.HTTPError as e:
             self._http_code = e.code
             self._is_error = True
@@ -142,6 +162,14 @@ class GithubUrlFetcher:
             self._debug_detail = str(e)
             return
 
+        if self._is_truncated_response and self._is_json:
+            self._is_error = True
+            self._error_code = "too_large"
+            self._error_message = "JSON response is too large"
+            self._debug_detail = f"exceeded {self._download_max_size_bytes} bytes"
+            self._raw_response = None
+            return
+
         if self._is_json:
             if not self._raw_response:
                 self._is_error = True
@@ -155,6 +183,25 @@ class GithubUrlFetcher:
                 self._error_code = "json_parse"
                 self._error_message = "Invalid response format"
                 self._debug_detail = "JSON parse error"
+
+    def _read_limited(self, resp) -> tuple[str, bool]:
+        chunks = []
+        total = 0
+        truncated = False
+        while True:
+            chunk = resp.read(_READ_CHUNK_SIZE)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > self._download_max_size_bytes:
+                remainder = self._download_max_size_bytes - (total - len(chunk))
+                if remainder > 0:
+                    chunks.append(chunk[:remainder])
+                truncated = True
+                resp.close()
+                break
+            chunks.append(chunk)
+        return b"".join(chunks).decode("utf-8", errors="ignore"), truncated
 
     def _read_http_error(self, e: urllib.error.HTTPError):
         body = ""

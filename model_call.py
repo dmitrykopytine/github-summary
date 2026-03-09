@@ -229,23 +229,23 @@ class ModelCall:
                 self._raw_output = response.content[0].text
         except anthropic.AuthenticationError as e:
             self._is_error = True
-            self._error_message = "LLM call failed: Authentication error"
+            self._error_message = "Authentication error"
             self._error_http_code = e.status_code
             debug_detail = str(e)
         except anthropic.APIStatusError as e:
             self._is_error = True
-            self._error_message = "LLM call failed"
+            self._error_message = "API error"
             self._error_http_code = e.status_code
             debug_detail = e.message
         except Exception as e:
             self._is_error = True
-            self._error_message = "LLM call failed"
+            self._error_message = "Generic error"
             self._error_http_code = getattr(e, "status_code", None)
             debug_detail = str(e)
 
         if not self._is_error and self._parsed is None:
             self._is_error = True
-            self._error_message = "LLM call failed: LLM returned empty or unparseable response"
+            self._error_message = "LLM returned empty or unparseable response"
 
         if self._is_error:
             self._debug("Model call failed", {
@@ -267,7 +267,7 @@ class ModelCall:
         )
         if counter.is_error:
             self._is_error = True
-            self._error_message = counter.error_message
+            self._error_message = "Token counting failed: " + counter.error_message
         return counter.token_count
 
     @property

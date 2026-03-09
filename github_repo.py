@@ -3,7 +3,12 @@ import threading
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 
-from config import DOWNLOAD_CONCURRENCY
+from config import (
+    DOWNLOAD_CONCURRENCY,
+    DOWNLOAD_LIMIT_FILES,
+    DOWNLOAD_LIMIT_ONE_FILE_MAX_KB,
+    DOWNLOAD_LIMIT_TOTAL_MAX_KB,
+)
 from debug import debug
 from exceptions import AppError
 from github_url_fetcher import GithubUrlFetcher
@@ -82,7 +87,7 @@ class GithubRepo:
         if fetcher.is_error:
             if fetcher.http_code == 404:
                 raise AppError(f"Repository not found or is private ({self._owner_name}/{self._repo_name})", 422)
-            raise AppError(fetcher.error_message or "Cannot fetch repository info", 502)
+            raise AppError("Cannot fetch repository info: " + fetcher.error_message, 502)
 
         data = json.loads(fetcher.raw_response)
         self._full_name = data.get("full_name", "")
@@ -103,6 +108,7 @@ class GithubRepo:
         debug(self.get_debug_context_repo(), "Fetching README", {"url": self._readme_url})
         fetcher = GithubUrlFetcher(
             self._readme_url,
+            download_max_size_bytes=DOWNLOAD_LIMIT_ONE_FILE_MAX_KB * 1024,
             debug_context_repo=self.get_debug_context_repo(),
             debug_context_call_title="Fetch README",
         )
@@ -111,7 +117,7 @@ class GithubRepo:
                 debug(self.get_debug_context_repo(), "Readme is not available")
                 self._readme = ""
                 return
-            raise AppError(fetcher.error_message or "Failed to download README", 502)
+            raise AppError("Failed to download README: " + fetcher.error_message, 502)
 
         self._readme = fetcher.raw_response
 
@@ -128,7 +134,7 @@ class GithubRepo:
                 debug(self.get_debug_context_repo(), "Repository is empty, no tree available")
                 self._tree: OrderedDict[str, dict] = OrderedDict()
                 return
-            raise AppError(fetcher.error_message or "Failed to fetch project tree", 502)
+            raise AppError("Failed to fetch project tree README: " + fetcher.error_message, 502)
 
         data = json.loads(fetcher.raw_response)
         tree_items = data.get("tree", [])
@@ -147,8 +153,9 @@ class GithubRepo:
         for path, size, url in entries:
             self._tree[path] = {"size": size, "url": url}
 
-    def download_files(self, file_paths: list[str], max_file_count: int, max_total_size_kb: float) -> None:
-        max_total_size_bytes = int(max_total_size_kb * 1024)
+    def download_files(self, file_paths: list[str]) -> None:
+        download_limit_total_max_bytes = DOWNLOAD_LIMIT_TOTAL_MAX_KB * 1024
+        download_limit_one_file_max_bytes = DOWNLOAD_LIMIT_ONE_FILE_MAX_KB * 1024
         valid_paths = []
         total_size = 0
         for path in file_paths:
@@ -156,10 +163,10 @@ class GithubRepo:
                 debug(self.get_debug_context_repo(), "Skipping file not in tree", {"path": path})
                 continue
             file_size = self._tree[path]["size"]
-            if len(valid_paths) >= max_file_count:
+            if len(valid_paths) >= DOWNLOAD_LIMIT_FILES:
                 debug(self.get_debug_context_repo(), "Reached max file count, skipping", {"path": path})
                 break
-            if total_size + file_size > max_total_size_bytes:
+            if total_size + file_size > download_limit_total_max_bytes:
                 debug(self.get_debug_context_repo(), "Would exceed max size, skipping", {
                     "path": path,
                     "size": file_size,
@@ -175,6 +182,7 @@ class GithubRepo:
             url = self._tree[path]["url"]
             fetcher = GithubUrlFetcher(
                 url,
+                download_max_size_bytes=download_limit_one_file_max_bytes,
                 debug_context_repo=self.get_debug_context_repo(),
                 debug_context_call_title=f"Download {path}",
             )
