@@ -71,7 +71,7 @@ All constants are in `config.py`:
 - `MODEL_MAX_OUTPUT_TOKENS_PER_CALL` — cap on output tokens per call (default 8,192). Output budget = `min(MODEL_MAX_TOKENS_PER_CALL * 0.2, MODEL_MAX_OUTPUT_TOKENS_PER_CALL)`, input budget = `MODEL_MAX_TOKENS_PER_CALL - output budget`. The output cap is required because if too many output tokens are requested, the Anthropic API may require streaming, which is not supported here.
 - `MODEL_CALL_RETRIES`, `MODEL_CALL_RETRY_DELAY_MS` — retry settings for model calls.
 - `GITHUB_TOKEN_ENV_VAR` — name of the env var for the GitHub token. The env var does not have to exist — the app works without it, but having it raises the API rate limit from 60 to 5,000 req/hr and enables access to private repos.
-- `DOWNLOAD_LIMIT_FILES`, `DOWNLOAD_LIMIT_ONE_FILE_MAX_KB` — limits for the file download stage (max files, per-file size cap). Files exceeding the per-file limit are truncated at the HTTP level without downloading the full response.
+- `DOWNLOAD_LIMIT_FILES`, `DOWNLOAD_LIMIT_ONE_FILE_MAX_KB` — max files and per-file size cap (KB). Used when downloading README and files picked by the model. Files exceeding the per-file limit are truncated at the HTTP level without downloading the full response.
 - `DOWNLOAD_CONCURRENCY` — max parallel file downloads from GitHub.
 - `DOWNLOAD_RETRIES`, `DOWNLOAD_RETRY_DELAY_MS` — retry settings for GitHub API requests.
 - `DOWNLOAD_SOCKET_TIMEOUT_SEC` — timeout for individual socket operations like connect and read (default 30s).
