@@ -10,9 +10,9 @@ A FastAPI service that summarizes GitHub repositories using the Anthropic Claude
 ## Environment variables
 
 
-| Variable            | Required | Description                                                                                                               |
-| ------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `ANTHROPIC_API_KEY` | yes      | Anthropic API key for Claude model calls                                                                                  |
+| Variable            | Required | Description                                                                                                                   |
+| ------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `ANTHROPIC_API_KEY` | yes      | Anthropic API key for Claude model calls                                                                                      |
 | `GITHUB_TOKEN`      | no       | GitHub personal access token — required for private repos; for public repos raises the API rate limit from 60 to 5,000 req/hr |
 
 
@@ -65,7 +65,7 @@ All constants are in `config.py`:
 
 - `DEBUG` — enables pretty-printed JSON responses and debug messages in the server console.
 - `BIND_HOST`, `BIND_PORT` — server bind address (default `0.0.0.0:8000`).
-- `MODEL`, `MODEL_MAX_TOKENS_PER_CALL` — Anthropic model name and total token budget (input + output) per call. The default (15,000 tokens) is conservative and works on any Anthropic tier. The model supports significantly higher limits, especially on Tier 2+. Increase this value to get more detailed and precise answers.
+- `MODEL`, `MODEL_MAX_TOKENS_PER_CALL` — Anthropic model name and total token budget (input + output) per call. Each request to `/summarize` makes 2 model calls (first pass + second pass). The default (15,000 tokens) is conservative and works on any Anthropic tier. The model supports significantly higher limits, especially on Tier 2+. Increase this value to get more detailed and precise answers.
 - `MODEL_CALL_RETRIES`, `MODEL_CALL_RETRY_DELAY_MS` — retry settings for model calls.
 - `DOWNLOAD_RETRIES`, `DOWNLOAD_RETRY_DELAY_MS` — retry settings for GitHub API requests.
 - `DOWNLOAD_CONCURRENCY` — max parallel file downloads from GitHub.
