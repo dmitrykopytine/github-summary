@@ -76,12 +76,13 @@ class GithubRepo:
         fetcher = GithubUrlFetcher(
             self._info_url,
             is_json=True,
-            context_repo=self.get_debug_context_repo(),
+            debug_context_repo=self.get_debug_context_repo(),
+            debug_context_call_title="Fetch repo info",
         )
         if fetcher.is_error:
             if fetcher.http_code == 404:
                 raise AppError(f"Repository not found or is private ({self._owner_name}/{self._repo_name})", 422)
-            raise AppError(f"Cannot fetch repository info ({self._owner_name}/{self._repo_name})", 502)
+            raise AppError(fetcher.error_message or "Cannot fetch repository info", 502)
 
         data = json.loads(fetcher.raw_response)
         self._full_name = data.get("full_name", "")
@@ -99,20 +100,18 @@ class GithubRepo:
             raise AppError(f"Incomplete repository info ({self._owner_name}/{self._repo_name}): Missing default_branch. Attempted URL: {self._info_url}", 502)
 
     def _fetch_readme(self):
-        debug(self.get_debug_context_repo(), "Fetching repo readme", {"url": self._readme_url})
-        fetcher = GithubUrlFetcher(self._readme_url, context_repo=self.get_debug_context_repo())
+        debug(self.get_debug_context_repo(), "Fetching README", {"url": self._readme_url})
+        fetcher = GithubUrlFetcher(
+            self._readme_url,
+            debug_context_repo=self.get_debug_context_repo(),
+            debug_context_call_title="Fetch README",
+        )
         if fetcher.is_error:
             if fetcher.http_code == 404:
                 debug(self.get_debug_context_repo(), "Readme is not available")
                 self._readme = ""
                 return
-            debug(self.get_debug_context_repo(), "Failed to download README", {
-                "error_message": fetcher.error_message,
-                "error_code": fetcher.error_code,
-                "http_code": fetcher.http_code,
-                "url": self._readme_url,
-            })
-            raise AppError(f"Failed to download README ({self._owner_name}/{self._repo_name}). Attempted URL: {self._readme_url}", 502)
+            raise AppError(fetcher.error_message or "Failed to download README", 502)
 
         self._readme = fetcher.raw_response
 
@@ -121,20 +120,15 @@ class GithubRepo:
         fetcher = GithubUrlFetcher(
             self._tree_url,
             is_json=True,
-            context_repo=self.get_debug_context_repo(),
+            debug_context_repo=self.get_debug_context_repo(),
+            debug_context_call_title="Fetch repo tree",
         )
         if fetcher.is_error:
             if fetcher.http_code == 409:
                 debug(self.get_debug_context_repo(), "Repository is empty, no tree available")
                 self._tree: OrderedDict[str, dict] = OrderedDict()
                 return
-            debug(self.get_debug_context_repo(), "Failed to fetch project tree", {
-                "error_message": fetcher.error_message,
-                "error_code": fetcher.error_code,
-                "http_code": fetcher.http_code,
-                "url": self._tree_url,
-            })
-            raise AppError(f"Failed to fetch project tree ({self._owner_name}/{self._repo_name}). Attempted URL: {self._tree_url}", 502)
+            raise AppError(fetcher.error_message or "Failed to fetch project tree", 502)
 
         data = json.loads(fetcher.raw_response)
         tree_items = data.get("tree", [])
@@ -179,12 +173,12 @@ class GithubRepo:
 
         def _download_one(path: str):
             url = self._tree[path]["url"]
-            fetcher = GithubUrlFetcher(url, context_repo=self.get_debug_context_repo())
+            fetcher = GithubUrlFetcher(
+                url,
+                debug_context_repo=self.get_debug_context_repo(),
+                debug_context_call_title=f"Download {path}",
+            )
             if fetcher.is_error:
-                debug(self.get_debug_context_repo(), "Failed to download file, skipping", {
-                    "path": path,
-                    "error": fetcher.error_message,
-                })
                 return
             with lock:
                 self._downloaded_files[path] = fetcher.raw_response

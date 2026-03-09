@@ -19,11 +19,13 @@ class GithubUrlFetcher:
         url: str,
         is_json: bool = False,
         retry_number: int | None = None,
-        context_repo: str = "",
+        debug_context_repo: str = "",
+        debug_context_call_title: str = "",
     ):
         self._url = url
         self._is_json = is_json
-        self._context_repo = context_repo
+        self._debug_context_repo = debug_context_repo
+        self._debug_context_call_title = debug_context_call_title
 
         self._raw_response: str | None = None
         self._http_code: int | None = None
@@ -42,12 +44,28 @@ class GithubUrlFetcher:
             if not self._should_retry():
                 break
             retries_left -= 1
-            debug(self._context_repo, "URL fetch failed, retrying", {
+            self._debug("Fetch failed, retrying", {
                 "url": self._url,
-                "error": self._error_message,
+                "error_message": self._error_message,
+                "error_code": self._error_code,
+                "debug_detail": self._debug_detail,
+                "http_code": self._http_code,
                 "retries_left": retries_left,
             })
             time.sleep(DOWNLOAD_RETRY_DELAY_MS / 1000)
+
+        if self._is_error:
+            self._debug("Fetch failed", {
+                "url": self._url,
+                "error_message": self._error_message,
+                "error_code": self._error_code,
+                "debug_detail": self._debug_detail,
+                "http_code": self._http_code,
+            })
+
+    def _debug(self, message: str, context: dict | None = None) -> None:
+        prefix = f"{self._debug_context_call_title}: " if self._debug_context_call_title else ""
+        debug(self._debug_context_repo, f"{prefix}{message}", context)
 
     @property
     def raw_response(self) -> str | None:
@@ -84,6 +102,7 @@ class GithubUrlFetcher:
         self._error_code = None
         self._is_error = False
         self._error_message = None
+        self._debug_detail: str | None = None
 
         req = urllib.request.Request(self._url)
         if self._is_json:
@@ -103,6 +122,7 @@ class GithubUrlFetcher:
             self._http_code = e.code
             self._is_error = True
             self._error_code = "http"
+            self._error_message = "HTTP error"
             self._read_http_error(e)
             return
         except urllib.error.URLError as e:
@@ -112,12 +132,14 @@ class GithubUrlFetcher:
         except socket.timeout:
             self._is_error = True
             self._error_code = "timeout"
-            self._error_message = "Network error (timeout)"
+            self._error_message = "Timeout"
+            self._debug_detail = "timeout"
             return
         except Exception as e:
             self._is_error = True
             self._error_code = "network"
-            self._error_message = f"Network error ({e})"
+            self._error_message = "Network error"
+            self._debug_detail = str(e)
             return
 
         if self._is_json:
@@ -131,7 +153,8 @@ class GithubUrlFetcher:
             except json.JSONDecodeError:
                 self._is_error = True
                 self._error_code = "json_parse"
-                self._error_message = "Cannot parse JSON"
+                self._error_message = "Invalid response format"
+                self._debug_detail = "JSON parse error"
 
     def _read_http_error(self, e: urllib.error.HTTPError):
         body = ""
@@ -149,27 +172,29 @@ class GithubUrlFetcher:
             except (json.JSONDecodeError, AttributeError):
                 pass
 
-        self._error_message = f"HTTP error ({e.code})"
+        self._debug_detail = f"HTTP {e.code}"
         if api_message:
-            self._error_message += f": {api_message}"
+            self._debug_detail += f": {api_message}"
 
     def _classify_url_error(self, e: urllib.error.URLError):
         reason = e.reason
+        self._error_message = "Network error"
         if isinstance(reason, socket.timeout):
+            self._error_message = "Timeout"
             self._error_code = "timeout"
-            self._error_message = "Network error (timeout)"
+            self._debug_detail = "timeout"
         elif isinstance(reason, socket.gaierror):
             self._error_code = "dns"
-            self._error_message = f"Network error (DNS lookup failed: {reason})"
+            self._debug_detail = f"DNS lookup failed: {reason}"
         elif isinstance(reason, ConnectionRefusedError):
             self._error_code = "connection_refused"
-            self._error_message = "Network error (connection refused)"
+            self._debug_detail = "connection refused"
         elif isinstance(reason, ConnectionResetError):
             self._error_code = "connection_reset"
-            self._error_message = "Network error (connection reset)"
+            self._debug_detail = "connection reset"
         elif isinstance(reason, OSError):
             self._error_code = "network"
-            self._error_message = f"Network error ({reason})"
+            self._debug_detail = str(reason)
         else:
             self._error_code = "network"
-            self._error_message = f"Network error ({reason})"
+            self._debug_detail = str(reason)
